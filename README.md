@@ -1,7 +1,3 @@
-# 修改mysql消息打包大小  
-show VARIABLES like '%max_allowed_packet%';    
-set global max_allowed_packet = 104857600;    
-  
 # miner添加32GiB任务  
 curl -X POST \    
 	 -H "Content-Type: application/json" \    
@@ -131,7 +127,7 @@ curl -X POST \
 # worker启动pc1任务，新起进程  
 curl -X POST \  
 	 -H "Content-Type: application/json" \  
-	 --data '{ "jsonrpc": "2.0", "method": "NSWORKER.ProcessPreCommitPhase1", "params": [1012,-1,"/usr/local/bin/worker"], "id": 1 }' \  
+	 --data '{ "jsonrpc": "2.0", "method": "NSWORKER.ProcessPrePhase1", "params": [1012,-1,"/usr/local/bin/worker"], "id": 1 }' \  
 	 'http://127.0.0.1:3456/rpc/v0'  
   
 # worker启动pc2任务，新起协程  
@@ -143,7 +139,7 @@ curl -X POST \
 # worker启动pc2任务，新起进程  
 curl -X POST \  
 	 -H "Content-Type: application/json" \  
-	 --data '{ "jsonrpc": "2.0", "method": "NSWORKER.ProcessPreCommitPhase2", "params": [1012,-1,"/usr/local/bin/worker"], "id": 1 }' \  
+	 --data '{ "jsonrpc": "2.0", "method": "NSWORKER.ProcessPrePhase2", "params": [1012,-1,"/usr/local/bin/worker"], "id": 1 }' \  
 	 'http://127.0.0.1:3456/rpc/v0'  
   
 # worker启动c1任务，新起协程  
@@ -168,7 +164,13 @@ curl -X POST \
 curl -X POST \  
 	 -H "Content-Type: application/json" \  
 	 --data '{ "jsonrpc": "2.0", "method": "NSWORKER.ProcessCommitPhase2", "params": [1012,-1,"/usr/local/bin/worker"], "id": 1 }' \  
-	 'http://127.0.0.1:3456/rpc/v0'  
+	 'http://127.0.0.1:3456/rpc/v0'
+
+# worker重启任务，新起进程 
+curl -X POST \  
+	 -H "Content-Type: application/json" \  
+	 --data '{ "jsonrpc": "2.0", "method": "NSWORKER.RetryTaskPIDByState", "params": [1013,"PC1","/usr/local/bin/worker"], "id": 1 }' \  
+	 'http://127.0.0.1:3456/rpc/v0'    
   
 # worker强制重启任务，新起协程  
 curl -X POST \  
@@ -238,3 +240,9 @@ select actor_id,sector_num,task_type,state,created_at,updated_at,timediff(update
 # 任务查询  
 select created_at,updated_at,actor_id,sector_num,task_type,state,worker_id,host_name from db_task_infos where actor_id=1034 and sector_num>199 order by updated_at asc;  
   
+# mysql授权
+GRANT ALL PRIVILEGES ON db_worker.* TO 'dockeruser'@'%' IDENTIFIED BY 'password';  
+
+# 修改mysql消息打包大小  
+show VARIABLES like '%max_allowed_packet%';    
+set global max_allowed_packet = 104857600;    

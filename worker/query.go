@@ -39,3 +39,10 @@ func (w *Worker) queryPoSt(reqInfo util.RequestInfo) ([]util.DbPostInfo, error) 
 	}
 	return w.MinerApi.QueryToPoSt(reqInfo)
 }
+
+func (w *Worker) queryMinerPoStInfo(actorID int64) (util.MinerPoStInfo, error) {
+	if w.MinerApi == nil {
+		return util.MinerPoStInfo{}, xerrors.Errorf("websocket routine exiting")
+	}
+	return w.MinerApi.QueryMinerPoStInfo(actorID)
+}

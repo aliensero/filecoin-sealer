@@ -9,24 +9,25 @@ import (
 )
 
 type MinerAPI struct {
-	CheckServer       func() bool
-	AddTask           func(actorID int64, taskType string, minerPaht string, unsealedPath string) (int64, error)
-	QueryOnly         func(DbTaskInfo) ([]DbTaskInfo, error)
-	QueryTask         func(RequestInfo) (DbTaskInfo, error)
-	GetTicket         func(actorID int64, sectorNum int64) ([]byte, error)
-	RecieveTaskResult func(actorID int64, sectorNum int64, taskType string, reqID string, isErr bool, result []byte) error
-	QueryLastResult   func(actorID int64, sectorNum int64, lastReqID string) (DbTaskLog, error)
-	UpdateTask        func(actorID int64, sectorNum int64, taskType string, state int64) (DbTaskInfo, error)
-	RetryTask         func(RequestInfo) (DbTaskInfo, error)
-	QueryRetry        func(RequestInfo) (DbTaskInfo, error)
-	ClearProving      func() error
-	UpdateTaskLog     func(reqInfo RequestInfo, result string) (string, error)
-	WorkerLogin       func(string, string, string) (string, error)
-	QueryToPoSt       func(reqInfo RequestInfo) ([]DbPostInfo, error)
-	StartSubmitPoSt   func(trnmsg PoStTransfer) string
-	ResetSyncPoStMap  func() string
-	ReFindPoStTable   func(actorID int64) ([]int64, error)
-	AbortPoSt         func(actorID int64) (string, error)
+	CheckServer        func() bool
+	AddTask            func(actorID int64, taskType string, minerPaht string, unsealedPath string) (int64, error)
+	QueryOnly          func(DbTaskInfo) ([]DbTaskInfo, error)
+	QueryTask          func(RequestInfo) (DbTaskInfo, error)
+	GetTicket          func(actorID int64, sectorNum int64) ([]byte, error)
+	RecieveTaskResult  func(actorID int64, sectorNum int64, taskType string, reqID string, isErr bool, result []byte) error
+	QueryLastResult    func(actorID int64, sectorNum int64, lastReqID string) (DbTaskLog, error)
+	UpdateTask         func(actorID int64, sectorNum int64, taskType string, state int64) (DbTaskInfo, error)
+	RetryTask          func(RequestInfo) (DbTaskInfo, error)
+	QueryRetry         func(RequestInfo) (DbTaskInfo, error)
+	ClearProving       func() error
+	UpdateTaskLog      func(reqInfo RequestInfo, result string) (string, error)
+	WorkerLogin        func(string, string, string) (string, error)
+	QueryToPoSt        func(reqInfo RequestInfo) ([]DbPostInfo, error)
+	StartSubmitPoSt    func(trnmsg PoStTransfer) string
+	ResetSyncPoStMap   func() string
+	ReFindPoStTable    func(actorID int64) ([]int64, error)
+	AbortPoSt          func(actorID int64) (string, error)
+	QueryMinerPoStInfo func(actorID int64) (MinerPoStInfo, error)
 }
 
 func authHeader(token string) http.Header {
@@ -83,4 +84,10 @@ type PoStTransfer struct {
 	Proofs           []VanillaProof
 	Randomness       NsPoStRandomness
 	Err              string
+}
+
+type MinerPoStInfo struct {
+	Di         NsDeadLineInfo
+	Partitions []NsPartition
+	Rand       NsPoStRandomness
 }

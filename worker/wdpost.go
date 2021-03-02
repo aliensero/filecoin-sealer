@@ -1,14 +1,10 @@
 package worker
 
 import (
-	"bytes"
-	"context"
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/filecoin-project/go-bitfield"
-	"github.com/filecoin-project/lotus/api"
 	"gitlab.ns/lotus-worker/util"
 	"golang.org/x/xerrors"
 )
@@ -25,129 +21,57 @@ type ActorPoStInfo struct {
 }
 
 func (w *Worker) AddPoStActor(actorID int64, addrinfo string, addrtype string) (string, error) {
-	id, err := util.NsNewIDAddress(uint64(actorID))
-	if err != nil {
-		return "", err
-	}
-	w.PoStMiner[id] = ActorPoStInfo{AddrInfo: addrinfo, AddrType: addrtype}
-	log.Infof("AddPoStActor %v", id.String())
-	return id.String(), nil
+
+	w.PoStMiner[actorID] = ActorPoStInfo{AddrInfo: addrinfo, AddrType: addrtype}
+	log.Infof("AddPoStActor f0%v", actorID)
+	return fmt.Sprintf("f0%d", actorID), nil
 }
 
 func (w *Worker) DisplayPoStActor() (string, error) {
 	key := "PoSt actors:"
 	for k, _ := range w.PoStMiner {
-		key = key + " " + k.String()
+		key = key + " " + fmt.Sprintf("f0%d", k)
 	}
 	return key, nil
 }
 
 func (w *Worker) WinPoStServer() {
-	key := util.NsTipSetKey{}
-	if w.LotusApi == nil {
-		log.Warnf("WinPoStServer Setup WinPostServer failed lotusApi is nil")
-		return
-	}
 
-	var notifs <-chan []*api.HeadChange
 	for {
-		var err error
-		if notifs == nil {
-			notifs, err = w.LotusApi.ChainNotify(context.TODO())
-			if err != nil {
-				log.Errorf("WinPoStServer ChainNotify error: %+v", err)
-				if strings.Contains(err.Error(), "websocket routine exiting") {
-					lapi, _, err := util.NewLotusApi(w.LotusUrl, w.LoutsToken)
-					if err != nil {
-						log.Errorf("WinPoStServer NewLotusApi error %v", err)
-					}
-					w.LotusApi = lapi
-					err = w.ConnMiner()
-					if err != nil {
-						log.Errorf("WinPoStServer ConnMiner error %v", err)
-					}
-				}
-				time.Sleep(10 * time.Second)
-				continue
-			}
-		}
-		changes, ok := <-notifs
-		if !ok {
-			log.Warn("WinPoStServer window post notifs channel closed")
-			notifs = nil
-			continue
-		}
-		if len(changes) == 0 {
-			log.Errorf("WinPoStServer window post first notif to have len > 0")
-			continue
-		}
-		tmpKey := util.NsTipSetKey{}
-		for _, change := range changes {
-			if change.Val == nil {
-				log.Errorf("WinPoStServer change.Val was nil")
-				continue
-			}
-			if change.Type == "current" {
-				tmpKey = change.Val.Key()
-				break
-			}
-		}
-
-		if tmpKey.String() == key.String() && !key.IsEmpty() {
-			continue
-		}
-		key = tmpKey
 		for a, info := range w.PoStMiner {
 			ta := a
 			tinfo := info
 
-			di, err := w.LotusApi.StateMinerProvingDeadline(context.TODO(), a, key)
+			minerPoStInfo, err := w.queryMinerPoStInfo(ta)
+			if err != nil {
+				log.Warnf("WinPoStServer actorID %v QueryMinerPoStInfo error %v", ta, err)
+				time.Sleep(3 * time.Second)
+			}
+			di := minerPoStInfo.Di
 			if di.Open != info.DiOpen && di.CurrentEpoch >= di.Open && di.CurrentEpoch < di.Close {
 				log.Infof("WinPoStServer actorID %v deadline %v StateMinerProvingDeadline", a, di)
-				go w.SearchPartitions(di, a, info.AddrInfo, info.AddrType)
+				go w.SearchPartitions(di, minerPoStInfo, ta, info.AddrInfo, info.AddrType)
 				tinfo.DiOpen = di.Open
 				w.PoStMiner[ta] = tinfo
 			} else {
 				log.Warnf("WinPoStServer already exec actorID %v deadline %v error %v", a, di, err)
 			}
 		}
+		time.Sleep(30 * time.Second)
 	}
 }
 
-func (w *Worker) SearchPartitions(di *util.NsDeadLineInfo, actorID util.NsAddress, addrInfo string, addrType string) error {
-	ts, err := w.LotusApi.ChainGetTipSetByHeight(context.TODO(), di.Challenge, util.NsTipSetKey{})
-	if err != nil {
-		log.Error(xerrors.Errorf("WinPoStServer failed ChainGetTipSetByHeight: %w", err))
-		return err
-	}
-	key := ts.Key()
-	id, err := util.NsIDFromAddress(actorID)
-	if err != nil {
-		log.Error(xerrors.Errorf("WinPoStServer failed to tranger address to id: %w", err))
-		return err
-	}
+func (w *Worker) SearchPartitions(di util.NsDeadLineInfo, minerPoStInfo util.MinerPoStInfo, actorID int64, addrInfo string, addrType string) error {
 
-	partitions, err := w.LotusApi.StateMinerPartitions(context.TODO(), actorID, di.Index, key)
-	if err != nil {
-		log.Errorf("WinPoStServer SearchPartitions actorID %v error %v", actorID, err)
-		return err
-	}
-	buf := new(bytes.Buffer)
-	if err := actorID.MarshalCBOR(buf); err != nil {
-		log.Error(xerrors.Errorf("failed to marshal address to cbor: %w", err))
-		return err
-	}
-	log.Infof("WinPoStServer SearchPartitions util.NsTipSetKey %v len(partitions)=%d", key, len(partitions))
+	id := uint64(actorID)
+
+	partitions := minerPoStInfo.Partitions
+	log.Infof("WinPoStServer SearchPartitions len(partitions)=%d", len(partitions))
 	if len(partitions) == 0 {
 		return xerrors.Errorf("WinPoStServer len(partitions) == 0")
 	}
-	rand, err := w.LotusApi.ChainGetRandomnessFromBeacon(context.TODO(), key, util.NsDomainSeparationTag_WindowedPoStChallengeSeed, di.Challenge, buf.Bytes())
-	if err != nil {
-		log.Errorf("WinPoStServer SearchPartitions actorID %v ChainGetRandomnessFromBeacon error %v", actorID, err)
-		return err
-	}
 	for partInx, part := range partitions {
-		go w.GeneratePoStProof(*di, id, part, util.NsPoStRandomness(rand), addrInfo, addrType, partInx)
+		go w.GeneratePoStProof(di, id, part, minerPoStInfo.Rand, addrInfo, addrType, partInx)
 	}
 	return nil
 }
@@ -326,28 +250,15 @@ func (w *Worker) GeneratePoStProof(di util.NsDeadLineInfo, minerID uint64, parti
 }
 
 func (w *Worker) RetryWinPoSt(actorID int64, addrInfo string, addrTyep string) (string, error) {
-	a, err := util.NsNewIDAddress(uint64(actorID))
+
+	minerPoStInfo, err := w.queryMinerPoStInfo(actorID)
 	if err != nil {
-		return "", err
+		log.Warnf("actorID %v QueryMinerPoStInfo error %v", actorID, err)
+		time.Sleep(3 * time.Second)
 	}
-	if w.LotusApi == nil {
-		return "", xerrors.Errorf("w.LotusApi is nil")
-	}
-	tipset, err := w.LotusApi.ChainHead(context.TODO())
-	if err != nil {
-		if strings.Contains(err.Error(), "websocket routine exiting") {
-			lapi, _, err := util.NewLotusApi(w.LotusUrl, w.LoutsToken)
-			if err != nil {
-				log.Errorf("NewLotusApi error %v", err)
-			}
-			w.LotusApi = lapi
-		}
-		return "", err
-	}
-	key := tipset.Key()
-	di, err := w.LotusApi.StateMinerProvingDeadline(context.TODO(), a, key)
+	di := minerPoStInfo.Di
 	if di.CurrentEpoch >= di.Open && di.CurrentEpoch < di.Close {
-		err := w.SearchPartitions(di, a, addrInfo, addrTyep)
+		err := w.SearchPartitions(di, minerPoStInfo, actorID, addrInfo, addrTyep)
 		if err != nil {
 			return "", err
 		}

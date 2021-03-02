@@ -43,10 +43,7 @@ type Worker struct {
 
 	TaskTimeOut map[string]int64
 
-	LotusUrl   string
-	LoutsToken string
-	LotusApi   util.LotusAPI
-	PoStMiner  map[util.NsAddress]ActorPoStInfo
+	PoStMiner map[int64]ActorPoStInfo
 }
 
 type FailedTask struct {

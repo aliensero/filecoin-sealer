@@ -1,6 +1,7 @@
 package miner
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"sync"
@@ -11,6 +12,41 @@ import (
 	"gitlab.ns/lotus-worker/worker"
 	"golang.org/x/xerrors"
 )
+
+func (m *Miner) QueryMinerPoStInfo(actorID int64) (util.MinerPoStInfo, error) {
+	miner, err := util.NsNewIDAddress(uint64(actorID))
+	if err != nil {
+		return util.MinerPoStInfo{}, err
+	}
+
+	buf := new(bytes.Buffer)
+	if err := miner.MarshalCBOR(buf); err != nil {
+		log.Error(xerrors.Errorf("failed to marshal address to cbor: %w", err))
+		return util.MinerPoStInfo{}, err
+	}
+
+	di, err := m.LotusApi.StateMinerProvingDeadline(context.TODO(), miner, util.NsTipSetKey{})
+	if err != nil {
+		return util.MinerPoStInfo{}, err
+	}
+	partitions, err := m.LotusApi.StateMinerPartitions(context.TODO(), miner, di.Index, util.NsTipSetKey{})
+	if err != nil {
+		return util.MinerPoStInfo{}, err
+	}
+
+	ts, err := m.LotusApi.ChainGetTipSetByHeight(context.TODO(), di.Challenge, util.NsTipSetKey{})
+	if err != nil {
+		log.Error(xerrors.Errorf("WinPoStServer failed ChainGetTipSetByHeight: %w", err))
+		return util.MinerPoStInfo{}, err
+	}
+	key := ts.Key()
+	rand, err := m.LotusApi.ChainGetRandomnessFromBeacon(context.TODO(), key, util.NsDomainSeparationTag_WindowedPoStChallengeSeed, di.Challenge, buf.Bytes())
+	if err != nil {
+		log.Errorf("WinPoStServer SearchPartitions actorID %v ChainGetRandomnessFromBeacon error %v", actorID, err)
+		return util.MinerPoStInfo{}, err
+	}
+	return util.MinerPoStInfo{*di, partitions, util.NsPoStRandomness(rand)}, nil
+}
 
 func (m *Miner) CheckRecoveries(actorID int64, addrInfo string, addrType string, dlIdx uint64) (string, error) {
 

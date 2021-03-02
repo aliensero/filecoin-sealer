@@ -129,14 +129,6 @@ var runCmd = &cli.Command{
 			Usage: "worker id",
 			Value: "/root/miner_storage/workerid",
 		},
-		&cli.StringFlag{
-			Name:  "lotusapi",
-			Usage: "lotus api",
-		},
-		&cli.StringFlag{
-			Name:  "lotustoken",
-			Usage: "lotus api token",
-		},
 	},
 
 	Action: func(cctx *cli.Context) error {
@@ -200,7 +192,7 @@ var runCmd = &cli.Command{
 			WorkerID:      workerID,
 			TaskTimeOut:   timeOut,
 			ExtrListen:    extrListen,
-			PoStMiner:     make(map[util.NsAddress]worker.ActorPoStInfo),
+			PoStMiner:     make(map[int64]worker.ActorPoStInfo),
 		}
 
 		rpcServer.Register("NSWORKER", workerInstan)
@@ -240,21 +232,8 @@ var runCmd = &cli.Command{
 		if err != nil {
 			return err
 		}
-		if cctx.IsSet("lotusapi") && cctx.IsSet("lotustoken") {
-			url := cctx.String("lotusapi")
-			token := cctx.String("lotustoken")
-			lapi, _, err := util.NewLotusApi(url, token)
-			if err != nil {
-				log.Errorf("NewLotusApi error %v", err)
-			}
-			workerInstan.LotusUrl = url
-			workerInstan.LoutsToken = token
-			workerInstan.LotusApi = lapi
-		}
 		go workerInstan.ResetAbortedSession()
-		if workerInstan.LotusApi != nil {
-			go workerInstan.WinPoStServer()
-		}
+		go workerInstan.WinPoStServer()
 		return srv.Serve(nl)
 	},
 }
