@@ -149,12 +149,12 @@ func (m *Miner) GetTicket(actorID int64, sectorNum int64) ([]byte, error) {
 	}
 
 	tipset, err := m.LotusApi.ChainHead(context.TODO())
-	epoch := tipset.Height()
-	tok := tipset.Key()
 	if err != nil {
-		log.Errorf("handlePreCommit1: api error, not proceeding", err)
+		log.Errorf("GetTicket: api ChainHead error %v", err)
 		return []byte{}, err
 	}
+	epoch := tipset.Height()
+	tok := tipset.Key()
 
 	ticketEpoch := epoch - util.NsSealRandomnessLookback
 	buf := new(bytes.Buffer)

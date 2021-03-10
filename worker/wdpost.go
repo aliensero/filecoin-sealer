@@ -45,6 +45,7 @@ func (w *Worker) WinPoStServer() {
 			minerPoStInfo, err := w.queryMinerPoStInfo(ta)
 			if err != nil {
 				log.Warnf("WinPoStServer actorID %v QueryMinerPoStInfo error %v", ta, err)
+				w.CheckMiner()
 				time.Sleep(3 * time.Second)
 			}
 			di := minerPoStInfo.Di

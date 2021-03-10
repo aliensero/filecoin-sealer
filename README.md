@@ -101,6 +101,9 @@ curl -X POST  -H "Content-Type: application/json"  --data '{ "jsonrpc": "2.0", "
   
 # miner 私钥恢复PoSt  
 curl -X POST  -H "Content-Type: application/json"  --data '{ "jsonrpc": "2.0", "method": "NSMINER.CheckRecoveries", "params": [1036,"7b2254797065223a22626c73222c22507269766174654b6579223a22503553576f4238614848336c3668665a7a7377775257734e662b765938372f6b4c727a69465254706e56513d227d","pri",0], "id": 1 }'  'http://127.0.0.1:4321/rpc/v0'  
+
+# miner 通过私钥转账  
+curl -X POST  -H "Content-Type: application/json"  --data '{ "jsonrpc": "2.0", "method": "NSMINER.TxByPrivatKey", "params": ["7b2254797065223a22626c73222c22507269766174654b6579223a225876306d73483644654b446e5167664757363449447058736d53356656714e42694d72444e474c78366a673d227d","t02120","1"], "id": 1 }'  'http://127.0.0.1:4321/rpc/v0'
   
   
   

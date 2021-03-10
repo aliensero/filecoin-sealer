@@ -28,6 +28,7 @@ type MinerAPI struct {
 	ReFindPoStTable    func(actorID int64) ([]int64, error)
 	AbortPoSt          func(actorID int64) (string, error)
 	QueryMinerPoStInfo func(actorID int64) (MinerPoStInfo, error)
+	MinerInfo          func(actorID uint64) (string, error)
 }
 
 func authHeader(token string) http.Header {

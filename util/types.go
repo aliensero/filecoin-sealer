@@ -26,12 +26,14 @@ import (
 
 	"github.com/filecoin-project/go-address"
 	"github.com/filecoin-project/lotus/api"
+	"github.com/filecoin-project/lotus/api/apibstore"
 	"github.com/filecoin-project/lotus/api/client"
 	"github.com/filecoin-project/lotus/build"
 	_ "github.com/filecoin-project/lotus/build"
 	"github.com/filecoin-project/lotus/chain/actors"
 	"github.com/filecoin-project/lotus/chain/actors/builtin/miner"
 	"github.com/filecoin-project/lotus/chain/actors/policy"
+	"github.com/filecoin-project/lotus/chain/store"
 	"github.com/filecoin-project/lotus/chain/types"
 	"github.com/filecoin-project/lotus/lib/sigs"
 	_ "github.com/filecoin-project/lotus/lib/sigs/bls"
@@ -151,13 +153,18 @@ type NsWithdrawBalanceParams = miner2.WithdrawBalanceParams
 type NsSectorOnChainInfo = miner.SectorOnChainInfo
 type NsSectorPreCommitOnChainInfo = miner.SectorPreCommitOnChainInfo
 type NsSectorLocation = miner.SectorLocation
+type NsDeadline = miner.Deadline
+type NsMinerPartition = miner.Partition
 
 var NsWithdrawBalance = miner.Methods.WithdrawBalance
+var NsMinerLoad = miner.Load
 
 type NsMessageSendSpec = api.MessageSendSpec
 
 type LotusAPI = api.FullNode
 type NsPartition = api.Partition
+
+var NsNewAPIBlockstore = apibstore.NewAPIBlockstore
 
 var NsCurrentNetwork = address.CurrentNetwork
 var NsMainNet = address.Mainnet
@@ -177,6 +184,8 @@ var NsGenerateWindowPoStWithVanilla = ffi.GenerateWindowPoStWithVanilla
 
 type NsSectorInfo = proof0.SectorInfo
 type NsPoStProof = proof0.PoStProof
+
+var NsActorStore = store.ActorStore
 
 func NsSealPreCommitPhase1(nsProof NsRegisteredSealProof, cacheDirPath, stagedSectorPath, sealedSectorPath string, nsSectorNum NsSectorNum, nsActorID NsActorID, nsTicket NsSealRandomness, nsPieceInfo []NsPieceInfo) ([]byte, error) {
 

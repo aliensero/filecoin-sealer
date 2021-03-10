@@ -5,6 +5,7 @@ import (
 	"context"
 	"reflect"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 	"gitlab.ns/lotus-worker/util"
@@ -247,12 +248,19 @@ func (m *Miner) sendMsgByPrivatKey(prihex string, msg util.NsMessage, cbs ...fun
 	if len(cbs) != 0 {
 		for _, cb := range cbs {
 			go func() {
-				mw, err := m.LotusApi.StateWaitMsg(context.TODO(), cid, 3)
+				receipt, err := m.LotusApi.StateGetReceipt(context.TODO(), cid, util.NsTipSetKey{})
+				for i := 0; i < 10; i++ {
+					if err == nil {
+						break
+					}
+					receipt, err = m.LotusApi.StateGetReceipt(context.TODO(), cid, util.NsTipSetKey{})
+					time.Sleep(30 * time.Second)
+				}
 				if err != nil {
 					cb(true, err.Error())
 					return
 				}
-				switch mw.Receipt.ExitCode {
+				switch receipt.ExitCode {
 				case util.NsexitcodeOk:
 					// this is what we expect
 				case util.NsexitcodeSysErrInsufficientFunds:
@@ -262,7 +270,7 @@ func (m *Miner) sendMsgByPrivatKey(prihex string, msg util.NsMessage, cbs ...fun
 					cb(true, xerrors.Errorf("SysErrOutOfGas").Error())
 					return
 				default:
-					cb(true, xerrors.Errorf("submitting sector proof failed exit=%d", mw.Receipt.ExitCode).Error())
+					cb(true, xerrors.Errorf("submitting sector proof failed exit=%d", receipt.ExitCode).Error())
 					return
 				}
 				log.Warnf("Miner sendMsgByPrivatKey StateWaitMsg cid %s error %v", cid.String(), err)
@@ -306,6 +314,39 @@ func (m *Miner) WithDrawByPrivatKey(prihex string, actorID uint64, amtstr string
 		Method: util.NsWithdrawBalance,
 		Nonce:  nonce,
 		Params: params,
+	}
+	return m.sendMsgByPrivatKey(prihex, msg)
+}
+
+func (m *Miner) TxByPrivatKey(prihex string, to string, amt string) (string, error) {
+
+	var err error
+	addr, err := util.GenerateAddrByHexPri(prihex)
+	if err != nil {
+		return "", err
+	}
+
+	toAddr, err := util.NsNewFromString(to)
+	if err != nil {
+		return "", err
+	}
+
+	val, err := util.ParseFIL(amt)
+	if err != nil {
+		return "", err
+	}
+
+	nonce, err := m.checkNonce(addr)
+	if err != nil {
+		return "", err
+	}
+
+	msg := util.NsMessage{
+		To:     toAddr,
+		From:   addr,
+		Value:  util.Nsbig(val),
+		Nonce:  nonce,
+		Method: util.NsMethodNum(0),
 	}
 	return m.sendMsgByPrivatKey(prihex, msg)
 }
