@@ -3,6 +3,7 @@ package miner
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"reflect"
 	"strings"
 	"time"
@@ -250,7 +251,7 @@ func (m *Miner) sendMsgByPrivatKey(prihex string, msg util.NsMessage, cbs ...fun
 			go func() {
 				receipt, err := m.LotusApi.StateGetReceipt(context.TODO(), cid, util.NsTipSetKey{})
 				for i := 0; i < 10; i++ {
-					if err == nil {
+					if err == nil && receipt != nil {
 						break
 					}
 					receipt, err = m.LotusApi.StateGetReceipt(context.TODO(), cid, util.NsTipSetKey{})
@@ -258,6 +259,10 @@ func (m *Miner) sendMsgByPrivatKey(prihex string, msg util.NsMessage, cbs ...fun
 				}
 				if err != nil {
 					cb(true, err.Error())
+					return
+				}
+				if receipt == nil {
+					cb(true, fmt.Sprintf("Miner sendMsgByPrivatKey cid %v StateGetReceipt is nil", cid))
 					return
 				}
 				switch receipt.ExitCode {

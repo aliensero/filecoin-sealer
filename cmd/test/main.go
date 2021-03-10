@@ -5,14 +5,27 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/BurntSushi/toml"
 	"gitlab.ns/lotus-worker/util"
 	"go.uber.org/fx"
 )
 
 func main() {
-	t1 := tis1{}
-	t2 := tis2{t1}
-	t2.ti1()
+	var config map[string]NoSchedulingObj
+	if _, err := toml.DecodeFile("test.toml", &config); err != nil {
+		fmt.Println(err)
+		return
+	}
+	fmt.Printf("%v\n", config)
+}
+
+type NoSchedulingObj struct {
+	Noschs []NoSchedulingInfo
+}
+
+type NoSchedulingInfo struct {
+	Hostname  string
+	Tasktypes []string
 }
 
 type ti interface {
