@@ -129,6 +129,10 @@ var runCmd = &cli.Command{
 			Usage: "worker id",
 			Value: "/root/miner_storage/workerid",
 		},
+		&cli.BoolFlag{
+			Name:  "post",
+			Usage: "post flag",
+		},
 	},
 
 	Action: func(cctx *cli.Context) error {
@@ -232,7 +236,9 @@ var runCmd = &cli.Command{
 		if err != nil {
 			return err
 		}
-		go workerInstan.ResetAbortedSession()
+		if !cctx.Bool("post") {
+			go workerInstan.ResetAbortedSession()
+		}
 		go workerInstan.WinPoStServer()
 		return srv.Serve(nl)
 	},

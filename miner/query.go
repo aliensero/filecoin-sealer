@@ -7,7 +7,7 @@ import (
 
 func (m *Miner) QueryOnly(taskInfo util.DbTaskInfo) ([]util.DbTaskInfo, error) {
 	var taskInfoRet []util.DbTaskInfo
-	err := m.Db.Where(taskInfo).Find(&taskInfoRet).Error
+	err := m.Db.Debug().Where(taskInfo).Find(&taskInfoRet).Error
 	return taskInfoRet, err
 }
 
