@@ -84,7 +84,7 @@ func (w *Worker) sealPreCommitPhase2(
 			process <- err
 		}()
 
-		log.Infof("sealPreCommitPhase2 sectorNum %d, minerID %d, cacheDirPath %s, sealedSectorPath %s", taskInfo.SectorNum, taskInfo.ActorID, taskInfo.CacheDirPath, taskInfo.SealedSectorPath)
+		log.Infof("sealPreCommitPhase2 sectorNum %d, minerID %d, cacheDirPath %s, sealedSectorPath %s", *taskInfo.SectorNum, *taskInfo.ActorID, taskInfo.CacheDirPath, taskInfo.SealedSectorPath)
 
 		// phase1Output, err := hex.DecodeString(taskInfo.Phase1OutputHex)
 
@@ -95,9 +95,9 @@ func (w *Worker) sealPreCommitPhase2(
 		sealedCID, unsealedCID, err = util.NsSealPreCommitPhase2(phase1Output, taskInfo.CacheDirPath, taskInfo.SealedSectorPath)
 
 	}()
-	w.handleProccess(timebeat, closeBeat, process, stopchnl, taskInfo.ActorID, taskInfo.SectorNum, taskType, &err, session)
+	w.handleProccess(timebeat, closeBeat, process, stopchnl, *taskInfo.ActorID, *taskInfo.SectorNum, taskType, &err, session)
 
-	w.DeferMinerRecieve(taskInfo.ActorID, taskInfo.SectorNum, taskType, session, []byte(fmt.Sprintf("%s-%s", sealedCID.String(), unsealedCID.String())), err)
+	w.DeferMinerRecieve(*taskInfo.ActorID, *taskInfo.SectorNum, taskType, session, []byte(fmt.Sprintf("%s-%s", sealedCID.String(), unsealedCID.String())), err)
 
 	return sealedCID, unsealedCID, err
 }
@@ -149,7 +149,7 @@ func (w *Worker) ProcessPrePhase2(actorID int64, sectorNum int64, binPath string
 
 	defer func() {
 		if err != nil {
-			w.DeferMinerRecieve(taskInfo.ActorID, taskInfo.SectorNum, taskType, session, []byte{}, err)
+			w.DeferMinerRecieve(*taskInfo.ActorID, *taskInfo.SectorNum, taskType, session, []byte{}, err)
 		}
 	}()
 
@@ -160,5 +160,5 @@ func (w *Worker) ProcessPrePhase2(actorID int64, sectorNum int64, binPath string
 
 func (w *Worker) processPrePhase2(taskInfo util.DbTaskInfo, binPath, session string) (ChildProcessInfo, error) {
 	pid, err := w.ChildProcess(taskInfo, binPath, session)
-	return ChildProcessInfo{taskInfo.ActorID, taskInfo.SectorNum, pid}, err
+	return ChildProcessInfo{*taskInfo.ActorID, *taskInfo.SectorNum, pid}, err
 }

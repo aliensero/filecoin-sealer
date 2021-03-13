@@ -5,18 +5,12 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/BurntSushi/toml"
 	"gitlab.ns/lotus-worker/util"
 	"go.uber.org/fx"
 )
 
 func main() {
-	var config map[string]NoSchedulingObj
-	if _, err := toml.DecodeFile("test.toml", &config); err != nil {
-		fmt.Println(err)
-		return
-	}
-	fmt.Printf("%v\n", config)
+
 }
 
 type NoSchedulingObj struct {
@@ -82,7 +76,7 @@ func testDB() {
 		return
 	}
 	fmt.Printf("%s\n", string(taskInfo.C1Out))
-	phase2Out, err := util.NsSealCommitPhase2(taskInfo.C1Out, util.NsSectorNum(taskInfo.SectorNum), util.NsActorID(taskInfo.ActorID))
+	phase2Out, err := util.NsSealCommitPhase2(taskInfo.C1Out, util.NsSectorNum(*taskInfo.SectorNum), util.NsActorID(*taskInfo.ActorID))
 	if err != nil {
 		fmt.Errorf("%v\n", err)
 		return

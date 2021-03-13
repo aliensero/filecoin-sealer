@@ -34,9 +34,9 @@ func (m *Miner) SendPreCommit(actorID int64, sectorNum int64, deposit string, fe
 	m.ReqSession.Store(session, nil)
 	defer func() {
 		if err != nil {
-			err := m.RecieveTaskResult(actorID, taskInfo.SectorNum, taskType, session, true, []byte(err.Error()))
+			err := m.RecieveTaskResult(actorID, *taskInfo.SectorNum, taskType, session, true, []byte(err.Error()))
 			if err != nil {
-				log.Errorf("SendPreCommit actorID %d sectorNum %d error %v", actorID, taskInfo.SectorNum, err)
+				log.Errorf("SendPreCommit actorID %d sectorNum %d error %v", actorID, *taskInfo.SectorNum, err)
 			}
 			m.ReqSession.Delete(session)
 		}
@@ -68,7 +68,7 @@ func (m *Miner) SendPreCommit(actorID int64, sectorNum int64, deposit string, fe
 
 	params := &util.NsSectorPreCommitInfo{
 		Expiration:   util.NsChainEpoch(expiration),
-		SectorNumber: util.NsSectorNum(taskInfo.SectorNum),
+		SectorNumber: util.NsSectorNum(*taskInfo.SectorNum),
 		SealProof:    util.NsRegisteredSealProof(taskInfo.ProofType),
 
 		SealedCID:     sealedCID,
@@ -80,19 +80,19 @@ func (m *Miner) SendPreCommit(actorID int64, sectorNum int64, deposit string, fe
 		return session, err
 	}
 	msgCID, err := m.SendMsg(fromStr, minerAddr.String(), int64(util.NsMethods.PreCommitSector), deposit, fee, enc.Bytes(), func(isErr bool, result string) {
-		err := m.RecieveTaskResult(actorID, taskInfo.SectorNum, taskType, session, isErr, []byte(result))
+		err := m.RecieveTaskResult(actorID, *taskInfo.SectorNum, taskType, session, isErr, []byte(result))
 		m.ReqSession.Delete(session)
-		log.Warnf("SendPreCommit actorID %d sectorNum %d result %s error %v", actorID, taskInfo.SectorNum, result, err)
+		log.Warnf("SendPreCommit actorID %d sectorNum %d result %s error %v", actorID, *taskInfo.SectorNum, result, err)
 	})
 	reqInfo = util.RequestInfo{
-		ActorID:   taskInfo.ActorID,
-		SectorNum: taskInfo.SectorNum,
+		ActorID:   *taskInfo.ActorID,
+		SectorNum: *taskInfo.SectorNum,
 		TaskType:  taskInfo.TaskType,
 		Session:   session,
 	}
 	_, errReserve := m.UpdateTaskLog(reqInfo, msgCID)
 	if errReserve != nil {
-		log.Warnf("SendPreCommit actorID %d sectorNum %d msgCID %s update tasklog error %v", actorID, taskInfo.SectorNum, msgCID, errReserve)
+		log.Warnf("SendPreCommit actorID %d sectorNum %d msgCID %s update tasklog error %v", actorID, *taskInfo.SectorNum, msgCID, errReserve)
 	}
 	return msgCID, err
 }
@@ -124,9 +124,9 @@ func (m *Miner) SendCommit(actorID int64, sectorNum int64, deposit string, fee s
 	m.ReqSession.Store(session, nil)
 	defer func() {
 		if err != nil {
-			err := m.RecieveTaskResult(actorID, taskInfo.SectorNum, taskType, session, true, []byte(err.Error()))
+			err := m.RecieveTaskResult(actorID, *taskInfo.SectorNum, taskType, session, true, []byte(err.Error()))
 			if err != nil {
-				log.Errorf("SendCommit m.SendMsg actorID %d sectorNum %d error %v", actorID, taskInfo.SectorNum, err)
+				log.Errorf("SendCommit m.SendMsg actorID %d sectorNum %d error %v", actorID, *taskInfo.SectorNum, err)
 			}
 			m.ReqSession.Delete(session)
 		}
@@ -148,7 +148,7 @@ func (m *Miner) SendCommit(actorID int64, sectorNum int64, deposit string, fee s
 
 	enc := new(bytes.Buffer)
 	params := &util.NsProveCommitSectorParams{
-		SectorNumber: util.NsSectorNum(taskInfo.SectorNum),
+		SectorNumber: util.NsSectorNum(*taskInfo.SectorNum),
 		Proof:        proof,
 	}
 
@@ -156,20 +156,20 @@ func (m *Miner) SendCommit(actorID int64, sectorNum int64, deposit string, fee s
 		return session, err
 	}
 	msgCID, err := m.SendMsg(fromStr, minerAddr.String(), int64(util.NsMethods.ProveCommitSector), deposit, fee, enc.Bytes(), func(isErr bool, result string) {
-		err := m.RecieveTaskResult(actorID, taskInfo.SectorNum, taskType, session, isErr, []byte(result))
+		err := m.RecieveTaskResult(actorID, *taskInfo.SectorNum, taskType, session, isErr, []byte(result))
 		m.ReqSession.Delete(session)
-		log.Warnf("SendCommit actorID %d sectorNum %d result %s error %v", actorID, taskInfo.SectorNum, result, err)
+		log.Warnf("SendCommit actorID %d sectorNum %d result %s error %v", actorID, *taskInfo.SectorNum, result, err)
 	})
 
 	reqInfo = util.RequestInfo{
-		ActorID:   taskInfo.ActorID,
-		SectorNum: taskInfo.SectorNum,
+		ActorID:   *taskInfo.ActorID,
+		SectorNum: *taskInfo.SectorNum,
 		TaskType:  taskInfo.TaskType,
 		Session:   session,
 	}
 	_, errReserve := m.UpdateTaskLog(reqInfo, msgCID)
 	if errReserve != nil {
-		log.Warnf("SendCommit actorID %d sectorNum %d msgCID %s update tasklog error %v", actorID, taskInfo.SectorNum, msgCID, errReserve)
+		log.Warnf("SendCommit actorID %d sectorNum %d msgCID %s update tasklog error %v", actorID, *taskInfo.SectorNum, msgCID, errReserve)
 	}
 	return msgCID, err
 }

@@ -171,7 +171,7 @@ func TaskRun(taskInfo util.DbTaskInfo, minerApi *util.MinerAPI, minerUrl string,
 			err, _ = errReserve.(error)
 		}
 		var close jsonrpc.ClientCloser
-		close, minerAPIErr = deferMinerRecieve(minerApi, minerUrl, taskInfo.ActorID, taskInfo.SectorNum, taskInfo.TaskType, session, result, err)
+		close, minerAPIErr = deferMinerRecieve(minerApi, minerUrl, *taskInfo.ActorID, *taskInfo.SectorNum, taskInfo.TaskType, session, result, err)
 		if close != nil {
 			close()
 		}
@@ -195,7 +195,7 @@ func TaskRun(taskInfo util.DbTaskInfo, minerApi *util.MinerAPI, minerUrl string,
 
 		var ticketBtyes []byte
 		if taskInfo.TicketHex == "" {
-			ticketBtyes1, err1 := minerApi.GetTicket(taskInfo.ActorID, taskInfo.SectorNum)
+			ticketBtyes1, err1 := minerApi.GetTicket(*taskInfo.ActorID, *taskInfo.SectorNum)
 			err = err1
 			if err1 != nil {
 				return result, minerAPIErr, err1
@@ -216,7 +216,7 @@ func TaskRun(taskInfo util.DbTaskInfo, minerApi *util.MinerAPI, minerUrl string,
 			return result, minerAPIErr, err1
 		}
 
-		phase1Out, err1 := util.NsSealPreCommitPhase1(util.NsRegisteredSealProof(taskInfo.ProofType), taskInfo.CacheDirPath, taskInfo.StagedSectorPath, taskInfo.SealedSectorPath, util.NsSectorNum(taskInfo.SectorNum), util.NsActorID(taskInfo.ActorID), util.NsSealRandomness(ticketBtyes[:]), pieces)
+		phase1Out, err1 := util.NsSealPreCommitPhase1(util.NsRegisteredSealProof(taskInfo.ProofType), taskInfo.CacheDirPath, taskInfo.StagedSectorPath, taskInfo.SealedSectorPath, util.NsSectorNum(*taskInfo.SectorNum), util.NsActorID(*taskInfo.ActorID), util.NsSealRandomness(ticketBtyes[:]), pieces)
 		result = phase1Out
 		err = err1
 		if err1 != nil {
@@ -224,7 +224,7 @@ func TaskRun(taskInfo util.DbTaskInfo, minerApi *util.MinerAPI, minerUrl string,
 		}
 		log.Infof("TaskRun PC1 phase1OutHex %v", hex.EncodeToString(phase1Out))
 	case util.PC2:
-		log.Infof("sealPreCommitPhase2 sectorNum %d, minerID %d, cacheDirPath %s, sealedSectorPath %s", taskInfo.SectorNum, taskInfo.ActorID, taskInfo.CacheDirPath, taskInfo.SealedSectorPath)
+		log.Infof("sealPreCommitPhase2 sectorNum %d, minerID %d, cacheDirPath %s, sealedSectorPath %s", *taskInfo.SectorNum, *taskInfo.ActorID, taskInfo.CacheDirPath, taskInfo.SealedSectorPath)
 		phase1Output := taskInfo.Phase1Output
 		sealedCID, unsealedCID, err1 := util.NsSealPreCommitPhase2(phase1Output, taskInfo.CacheDirPath, taskInfo.SealedSectorPath)
 		result = []byte(fmt.Sprintf("%s-%s", sealedCID.String(), unsealedCID.String()))
@@ -276,9 +276,9 @@ func TaskRun(taskInfo util.DbTaskInfo, minerApi *util.MinerAPI, minerUrl string,
 			return result, minerAPIErr, err1
 		}
 
-		log.Infof(" params proofType %d sealedCID %s unsealedCID %s cacheDirPath %s sealedSectorPath %s sealedSectorPath sectorNum %d minerID %d ticket %v seed %v pieces %v", proofType, sealedCID, unsealedCID, taskInfo.CacheDirPath, taskInfo.SealedSectorPath, taskInfo.ActorID, taskInfo.SectorNum, ticketBytes, seedBytes, pieces)
+		log.Infof(" params proofType %d sealedCID %s unsealedCID %s cacheDirPath %s sealedSectorPath %s sealedSectorPath sectorNum %d minerID %d ticket %v seed %v pieces %v", proofType, sealedCID, unsealedCID, taskInfo.CacheDirPath, taskInfo.SealedSectorPath, *taskInfo.ActorID, *taskInfo.SectorNum, ticketBytes, seedBytes, pieces)
 
-		phase1Output, err1 := util.NsSealCommitPhase1(proofType, sealedCID, unsealedCID, taskInfo.CacheDirPath, taskInfo.SealedSectorPath, util.NsSectorNum(taskInfo.SectorNum), util.NsActorID(taskInfo.ActorID), util.NsSealRandomness(ticketBytes[:]), util.NsSeed(seedBytes[:]), pieces)
+		phase1Output, err1 := util.NsSealCommitPhase1(proofType, sealedCID, unsealedCID, taskInfo.CacheDirPath, taskInfo.SealedSectorPath, util.NsSectorNum(*taskInfo.SectorNum), util.NsActorID(*taskInfo.ActorID), util.NsSealRandomness(ticketBytes[:]), util.NsSeed(seedBytes[:]), pieces)
 		result = phase1Output
 		err = err1
 		if err1 != nil {
@@ -287,7 +287,7 @@ func TaskRun(taskInfo util.DbTaskInfo, minerApi *util.MinerAPI, minerUrl string,
 
 	case util.C2:
 		phase1Output := taskInfo.C1Out
-		phase2Out, err1 := util.NsSealCommitPhase2(phase1Output, util.NsSectorNum(taskInfo.SectorNum), util.NsActorID(taskInfo.ActorID))
+		phase2Out, err1 := util.NsSealCommitPhase2(phase1Output, util.NsSectorNum(*taskInfo.SectorNum), util.NsActorID(*taskInfo.ActorID))
 		result = phase2Out
 		err = err1
 		if err1 != nil {

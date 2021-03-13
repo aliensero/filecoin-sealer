@@ -54,8 +54,8 @@ func (wl *Worker) RemoteGetSector(w http.ResponseWriter, r *http.Request) {
 	}
 
 	taskInfo := util.DbTaskInfo{
-		ActorID:   actorID,
-		SectorNum: sectorNum,
+		ActorID:   &actorID,
+		SectorNum: &sectorNum,
 	}
 	taskInfos, err := wl.MinerApi.QueryOnly(taskInfo)
 	if err != nil || len(taskInfos) <= 0 {
@@ -177,8 +177,8 @@ func (wl *Worker) RemoteDelSector(w http.ResponseWriter, r *http.Request) {
 	}
 
 	taskInfo := util.DbTaskInfo{
-		ActorID:   actorID,
-		SectorNum: sectorNum,
+		ActorID:   &actorID,
+		SectorNum: &sectorNum,
 	}
 	taskInfos, err := wl.MinerApi.QueryOnly(taskInfo)
 	if err != nil || len(taskInfos) <= 0 {
@@ -190,28 +190,28 @@ func (wl *Worker) RemoteDelSector(w http.ResponseWriter, r *http.Request) {
 	if pathtype == "cache" {
 		err = delCache(taskInfo.CacheDirPath)
 		if err != nil {
-			log.Errorf("delete actorID %d sectorNum %d CachePath %s error %v", taskInfo.ActorID, taskInfo.SectorNum, taskInfo.CacheDirPath, err)
+			log.Errorf("delete actorID %d sectorNum %d CachePath %s error %v", *taskInfo.ActorID, *taskInfo.SectorNum, taskInfo.CacheDirPath, err)
 			w.WriteHeader(500)
 			return
 		}
 		w.WriteHeader(200)
-		w.Write([]byte(fmt.Sprintf("delete actorID %d sectorNum %d Cachefile %s sc-02-data-layer-* sc-02-data-tree-[cd]*", taskInfo.ActorID, taskInfo.SectorNum, taskInfo.CacheDirPath)))
+		w.Write([]byte(fmt.Sprintf("delete actorID %d sectorNum %d Cachefile %s sc-02-data-layer-* sc-02-data-tree-[cd]*", *taskInfo.ActorID, *taskInfo.SectorNum, taskInfo.CacheDirPath)))
 	} else if pathtype == "seal" {
 		err = os.Remove(taskInfo.SealedSectorPath)
 		if err != nil {
-			log.Warnf("actorID %d sectorNum %d sealedPath %s remove error %v", taskInfo.ActorID, taskInfo.SectorNum, taskInfo.SealedSectorPath, err)
+			log.Warnf("actorID %d sectorNum %d sealedPath %s remove error %v", *taskInfo.ActorID, *taskInfo.SectorNum, taskInfo.SealedSectorPath, err)
 			w.WriteHeader(500)
 			return
 		}
 		err = os.RemoveAll(taskInfo.CacheDirPath)
 		if err != nil {
-			log.Warnf("actorID %d sectorNum %d CachePath %s remove error %v", taskInfo.ActorID, taskInfo.SectorNum, taskInfo.CacheDirPath, err)
+			log.Warnf("actorID %d sectorNum %d CachePath %s remove error %v", *taskInfo.ActorID, *taskInfo.SectorNum, taskInfo.CacheDirPath, err)
 			w.WriteHeader(500)
 			return
 		}
 
 		w.WriteHeader(200)
-		w.Write([]byte(fmt.Sprintf("actorID %d sectorNum %d sealedPath %s CachePath %s removed", taskInfo.ActorID, taskInfo.SectorNum, taskInfo.SealedSectorPath, taskInfo.CacheDirPath)))
+		w.Write([]byte(fmt.Sprintf("actorID %d sectorNum %d sealedPath %s CachePath %s removed", *taskInfo.ActorID, *taskInfo.SectorNum, taskInfo.SealedSectorPath, taskInfo.CacheDirPath)))
 	} else {
 		w.WriteHeader(200)
 		w.Write([]byte("undefine option type, 'seal' or 'cache'"))

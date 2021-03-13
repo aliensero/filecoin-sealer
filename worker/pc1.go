@@ -97,7 +97,7 @@ func (w *Worker) sealPreCommitPhase1(
 
 		var ticketBtyes []byte
 		if taskInfo.TicketHex == "" {
-			ticketBtyes1, err := w.MinerApi.GetTicket(taskInfo.ActorID, taskInfo.SectorNum)
+			ticketBtyes1, err := w.MinerApi.GetTicket(*taskInfo.ActorID, *taskInfo.SectorNum)
 			if err != nil {
 				log.Error(err)
 				return
@@ -157,17 +157,17 @@ func (w *Worker) sealPreCommitPhase1(
 		cacheDirPath := taskInfo.CacheDirPath
 		stagedSectorPath := taskInfo.StagedSectorPath
 		sealedSectorPath := taskInfo.SealedSectorPath
-		sectorNum := util.NsSectorNum(taskInfo.SectorNum)
-		minerID := util.NsActorID(taskInfo.ActorID)
+		sectorNum := util.NsSectorNum(*taskInfo.SectorNum)
+		minerID := util.NsActorID(*taskInfo.ActorID)
 
 		log.Info("sealPreCommitPhase1 pieces[]", pieces)
 
 		phase1Output, err = util.NsSealPreCommitPhase1(proofType, cacheDirPath, stagedSectorPath, sealedSectorPath, sectorNum, minerID, ticket, pieces)
 	}()
 
-	w.handleProccess(timebeat, closeBeat, process, stopchnl, taskInfo.ActorID, taskInfo.SectorNum, taskType, &err, session)
+	w.handleProccess(timebeat, closeBeat, process, stopchnl, *taskInfo.ActorID, *taskInfo.SectorNum, taskType, &err, session)
 
-	w.DeferMinerRecieve(taskInfo.ActorID, taskInfo.SectorNum, taskType, session, phase1Output, err)
+	w.DeferMinerRecieve(*taskInfo.ActorID, *taskInfo.SectorNum, taskType, session, phase1Output, err)
 
 	return phase1Output, err
 }
@@ -220,7 +220,7 @@ func (w *Worker) ProcessPrePhase1(actorID int64, sectorNum int, binPath string) 
 
 	defer func() {
 		if err != nil {
-			w.DeferMinerRecieve(taskInfo.ActorID, taskInfo.SectorNum, taskType, session, []byte{}, err)
+			w.DeferMinerRecieve(*taskInfo.ActorID, *taskInfo.SectorNum, taskType, session, []byte{}, err)
 		}
 	}()
 	childProcessInfo, err := w.processPrePhase1(taskInfo, binPath, session)
@@ -262,5 +262,5 @@ func (w *Worker) processPrePhase1(taskInfo util.DbTaskInfo, binPath, session str
 
 	pid, err := w.ChildProcess(taskInfo, binPath, session)
 
-	return ChildProcessInfo{taskInfo.ActorID, taskInfo.SectorNum, pid}, err
+	return ChildProcessInfo{*taskInfo.ActorID, *taskInfo.SectorNum, pid}, err
 }

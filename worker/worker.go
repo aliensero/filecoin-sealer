@@ -409,13 +409,13 @@ func (w *Worker) RetryTaskPID(actorID int64, sectorNum int64, taskType string, b
 		return session, nil
 
 	case util.PRECOMMIT:
-		go w.updateTaskInfo(taskInfo.ActorID, taskInfo.SectorNum, taskInfo.TaskType, util.INIT)
+		go w.updateTaskInfo(*taskInfo.ActorID, *taskInfo.SectorNum, taskInfo.TaskType, util.INIT)
 
 	case util.SEED:
-		go w.updateTaskInfo(taskInfo.ActorID, taskInfo.SectorNum, taskInfo.TaskType, util.INIT)
+		go w.updateTaskInfo(*taskInfo.ActorID, *taskInfo.SectorNum, taskInfo.TaskType, util.INIT)
 
 	case util.COMMIT:
-		go w.updateTaskInfo(taskInfo.ActorID, taskInfo.SectorNum, taskInfo.TaskType, util.INIT)
+		go w.updateTaskInfo(*taskInfo.ActorID, *taskInfo.SectorNum, taskInfo.TaskType, util.INIT)
 	}
 	err = xerrors.Errorf("RetryTask actorID %d sectorNum %d taskType %s undefine error", actorID, sectorNum, taskType)
 	return session, err
@@ -457,14 +457,14 @@ func (w *Worker) RetryTaskPIDByState(actorID int64, taskType string, binPath str
 	if err != nil && strings.Contains(err.Error(), "record not found") {
 		return "", err
 	}
-	ret, err := w.RetryTaskPID(actorID, taskInfo.SectorNum, taskType, binPath)
+	ret, err := w.RetryTaskPID(actorID, *taskInfo.SectorNum, taskType, binPath)
 	return ret, err
 }
 
 func (w *Worker) ChildProcess(taskInfo util.DbTaskInfo, binPath, session string) (int, error) {
 
 	var err error
-	cmd, err := TaskProcess(binPath, w.MinerUrl, session, taskInfo.SectorNum, taskInfo.ActorID)
+	cmd, err := TaskProcess(binPath, w.MinerUrl, session, *taskInfo.SectorNum, *taskInfo.ActorID)
 
 	if err != nil {
 		return -1, err
@@ -504,18 +504,18 @@ func (w *Worker) ChildProcess(taskInfo util.DbTaskInfo, binPath, session string)
 	go func() {
 		errReserver := cmd.Wait()
 		if errReserver != nil {
-			log.Warnf("acotID %d sectorNum %d pid %v cmd.Wait() error %v", taskInfo.ActorID, taskInfo.SectorNum, cmd.Process.Pid, errReserver)
+			log.Warnf("acotID %d sectorNum %d pid %v cmd.Wait() error %v", *taskInfo.ActorID, *taskInfo.SectorNum, cmd.Process.Pid, errReserver)
 		}
 		process <- nil
 	}()
 
-	log.Infof("TaskProcess pid %v actorID %d sectorNum %d", cmd.Process.Pid, taskInfo.ActorID, taskInfo.SectorNum)
+	log.Infof("TaskProcess pid %v actorID %d sectorNum %d", cmd.Process.Pid, *taskInfo.ActorID, *taskInfo.SectorNum)
 	go func() {
-		w.handleProccess(timebeat, closeBeat, process, stopchnl, taskInfo.ActorID, taskInfo.SectorNum, taskInfo.TaskType, &err, session, func() {
+		w.handleProccess(timebeat, closeBeat, process, stopchnl, *taskInfo.ActorID, *taskInfo.SectorNum, taskInfo.TaskType, &err, session, func() {
 			cmd.Process.Kill()
 		})
 		if err != nil {
-			w.DeferMinerRecieve(taskInfo.ActorID, taskInfo.SectorNum, taskInfo.TaskType, session, []byte{}, err)
+			w.DeferMinerRecieve(*taskInfo.ActorID, *taskInfo.SectorNum, taskInfo.TaskType, session, []byte{}, err)
 		}
 	}()
 
@@ -551,10 +551,11 @@ func (w *Worker) CheckMiner() (string, error) {
 }
 
 func (w *Worker) ResetAbortedSession() ([]map[string]interface{}, error) {
+	var state int64 = util.RUNING
 	taskInfo := util.DbTaskInfo{
 		WorkerID: w.WorkerID,
 		HostName: w.HostName,
-		State:    util.RUNING,
+		State:    &state,
 	}
 	ret := make([]map[string]interface{}, 0, 1)
 	taskInfos, err := w.queryOnly(taskInfo)
@@ -571,37 +572,37 @@ func (w *Worker) ResetAbortedSession() ([]map[string]interface{}, error) {
 				cmd.Stdout = os.Stdout
 				err := cmd.Run()
 				if err != nil {
-					log.Errorf("delete actorID %d sectorNum %d sealedfile %s error %v", ti.ActorID, ti.SectorNum, ti.SealedSectorPath, err)
+					log.Errorf("delete actorID %d sectorNum %d sealedfile %s error %v", *ti.ActorID, *ti.SectorNum, ti.SealedSectorPath, err)
 				}
 				cmd = exec.Command("/bin/bash", "-c", "rm -f "+filepath.Join(ti.CacheDirPath, `sc-02-data-tree-[cr]*`))
 				cmd.Stderr = os.Stderr
 				cmd.Stdout = os.Stdout
 				err = cmd.Run()
 				if err != nil {
-					log.Errorf("delete actorID %d sectorNum %d Cachefile %s/sc-02-data-tree-[cr]* error %v", ti.ActorID, ti.SectorNum, ti.CacheDirPath, err)
+					log.Errorf("delete actorID %d sectorNum %d Cachefile %s/sc-02-data-tree-[cr]* error %v", *ti.ActorID, *ti.SectorNum, ti.CacheDirPath, err)
 				}
 				cmd = exec.Command("/bin/bash", "-c", "rm -f "+filepath.Join(ti.CacheDirPath, `c1Out`))
 				cmd.Stderr = os.Stderr
 				cmd.Stdout = os.Stdout
 				err = cmd.Run()
 				if err != nil {
-					log.Errorf("delete actorID %d sectorNum %d Cachefile %s/c1Out error %v", ti.ActorID, ti.SectorNum, ti.CacheDirPath, err)
+					log.Errorf("delete actorID %d sectorNum %d Cachefile %s/c1Out error %v", *ti.ActorID, *ti.SectorNum, ti.CacheDirPath, err)
 				}
-				_, err = w.updateTaskInfo(ti.ActorID, ti.SectorNum, util.PC1, util.RETRY)
+				_, err = w.updateTaskInfo(*ti.ActorID, *ti.SectorNum, util.PC1, util.RETRY)
 				if err != nil {
-					log.Warnf("actorID %d sectorNum %d taskType %s ResetAbortedSession error %w", ti.ActorID, ti.SectorNum, ti.TaskType, err)
+					log.Warnf("actorID %d sectorNum %d taskType %s ResetAbortedSession error %w", *ti.ActorID, *ti.SectorNum, ti.TaskType, err)
 					continue
 				}
 			} else {
-				_, err := w.updateTaskInfo(ti.ActorID, ti.SectorNum, ti.TaskType, util.RETRY)
+				_, err := w.updateTaskInfo(*ti.ActorID, *ti.SectorNum, ti.TaskType, util.RETRY)
 				if err != nil {
-					log.Warnf("actorID %d sectorNum %d taskType %s ResetAbortedSession error %w", ti.ActorID, ti.SectorNum, ti.TaskType, err)
+					log.Warnf("actorID %d sectorNum %d taskType %s ResetAbortedSession error %w", *ti.ActorID, *ti.SectorNum, ti.TaskType, err)
 					continue
 				}
 			}
 			rm := map[string]interface{}{
-				"ActorID":  ti.ActorID,
-				"SctorNum": ti.SectorNum,
+				"ActorID":  *ti.ActorID,
+				"SctorNum": *ti.SectorNum,
 				"TaskType": ti.TaskType,
 			}
 			ret = append(ret, rm)

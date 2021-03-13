@@ -287,9 +287,11 @@ var taskRunCmd = &cli.Command{
 			return err
 		}
 		defer close()
+		var actorID int64 = cctx.Int64("actorID")
+		var sectorNum int64 = cctx.Int64("sectorNum")
 		taskInfoWhr := util.DbTaskInfo{
-			ActorID:   cctx.Int64("actorID"),
-			SectorNum: cctx.Int64("sectorNum"),
+			ActorID:   &actorID,
+			SectorNum: &sectorNum,
 		}
 		taskInfos, err := minerApi.QueryOnly(taskInfoWhr)
 		if err != nil {

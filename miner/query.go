@@ -7,7 +7,7 @@ import (
 
 func (m *Miner) QueryOnly(taskInfo util.DbTaskInfo) ([]util.DbTaskInfo, error) {
 	var taskInfoRet []util.DbTaskInfo
-	err := m.Db.Where("actor_id=? and sector_num=?", taskInfo.ActorID, taskInfo.SectorNum).Find(&taskInfoRet).Error
+	err := m.Db.Where(taskInfo).Find(&taskInfoRet).Error
 	return taskInfoRet, err
 }
 
@@ -89,7 +89,7 @@ func (m *Miner) QueryTask(reqInfo util.RequestInfo) (util.DbTaskInfo, error) {
 
 	taskLog := util.DbTaskLog{
 		ActorID:      actorID,
-		SectorNum:    taskInfo.SectorNum,
+		SectorNum:    *taskInfo.SectorNum,
 		TaskType:     taskType,
 		WorkerID:     workerID,
 		HostName:     hostName,
@@ -138,9 +138,9 @@ func (m *Miner) QueryRetry(reqInfo util.RequestInfo) (util.DbTaskInfo, error) {
 	if err != nil {
 		return taskInfo, err
 	}
-	err = m.Db.Where("actor_id = ? and task_type = ? and worker_id = ? and state = ? and sector_num = ?", actorID, taskType, workerID, util.RETRY, taskInfo.SectorNum).Model(taskInfo).Update("state", util.RUNING).Error
+	err = m.Db.Where("actor_id = ? and task_type = ? and worker_id = ? and state = ? and sector_num = ?", actorID, taskType, workerID, util.RETRY, *taskInfo.SectorNum).Model(taskInfo).Update("state", util.RUNING).Error
 	if err != nil {
-		log.Errorf("Miner query actorID % sectorNum %d taskType %s retry error %v", actorID, taskInfo.SectorNum, taskType, err)
+		log.Errorf("Miner query actorID % sectorNum %d taskType %s retry error %v", actorID, *taskInfo.SectorNum, taskType, err)
 		err = xerrors.Errorf("record not found")
 	}
 	return taskInfo, err
@@ -156,9 +156,10 @@ func (m *Miner) RetryTask(reqInfo util.RequestInfo) (util.DbTaskInfo, error) {
 	workerID := reqInfo.WorkerID
 	hostName := reqInfo.HostName
 
+	var state int64 = util.RUNING
 	taskInfo := util.DbTaskInfo{
 		TaskType:     taskType,
-		State:        util.RUNING,
+		State:        &state,
 		WorkerListen: workerListen,
 		WorkerID:     workerID,
 		HostName:     hostName,
@@ -180,7 +181,7 @@ func (m *Miner) RetryTask(reqInfo util.RequestInfo) (util.DbTaskInfo, error) {
 	}
 	taskLog := util.DbTaskLog{
 		ActorID:      actorID,
-		SectorNum:    taskInfo.SectorNum,
+		SectorNum:    *taskInfo.SectorNum,
 		TaskType:     taskType,
 		WorkerID:     taskInfo.WorkerID,
 		WorkerListen: workerListen,

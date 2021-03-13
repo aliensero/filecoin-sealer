@@ -181,7 +181,7 @@ func (m *Miner) ReFindPoStTable(actorID int64) ([]int64, error) {
 		proofType := t.ProofType
 		postInfo := util.DbPostInfo{
 			ActorID:          actorID,
-			SectorNum:        sectorNum,
+			SectorNum:        *sectorNum,
 			CommR:            commR,
 			CacheDirPath:     cacheDirPath,
 			SealedSectorPath: sealedSectorPath,
@@ -193,7 +193,7 @@ func (m *Miner) ReFindPoStTable(actorID int64) ([]int64, error) {
 			log.Warnf("ReFindPoStTable actorID %d sectorNum %d workerID %s error %v", actorID, sectorNum, workerID, err)
 			continue
 		}
-		retSec[i+1] = sectorNum
+		retSec[i+1] = *sectorNum
 	}
 	tx.Commit()
 	return retSec, nil

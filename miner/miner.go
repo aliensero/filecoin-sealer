@@ -89,8 +89,8 @@ func (m *Miner) AddTask(actorID int64, sectorNum int64, taskType string, minerPa
 	SealedPath := fmt.Sprintf("%s/%s%d/sealed/s-%s%d-%d", minerPaht, f, actorID, f, actorID, sectorNum)
 
 	taskInfo := util.DbTaskInfo{
-		ActorID:          actorID,
-		SectorNum:        sectorNum,
+		ActorID:          &actorID,
+		SectorNum:        &sectorNum,
 		TaskType:         taskType,
 		CacheDirPath:     cachePath,
 		SealedSectorPath: SealedPath,
@@ -109,7 +109,7 @@ func (m *Miner) AddTask(actorID int64, sectorNum int64, taskType string, minerPa
 	if err := m.Db.Create(&taskInfo).Error; err != nil {
 		return 0, err
 	}
-	return taskInfo.SectorNum, nil
+	return *taskInfo.SectorNum, nil
 }
 
 func (m *Miner) UpdateTask(actorID int64, sectorNum int64, taskType string, state int64) (util.DbTaskInfo, error) {
@@ -200,12 +200,12 @@ func (m *Miner) GetSeedRand(actorID int64, sectorNum int64) (string, error) {
 		var result []byte
 		defer func() {
 			if err != nil {
-				err = m.RecieveTaskResult(actorID, taskInfo.SectorNum, taskInfo.TaskType, session, true, []byte(err.Error()))
+				err = m.RecieveTaskResult(actorID, *taskInfo.SectorNum, taskInfo.TaskType, session, true, []byte(err.Error()))
 				if err != nil {
 					log.Warn("GetSeed m.RecieveTaskResult error %v", err)
 				}
 			} else {
-				err = m.RecieveTaskResult(actorID, taskInfo.SectorNum, taskInfo.TaskType, session, false, []byte(result))
+				err = m.RecieveTaskResult(actorID, *taskInfo.SectorNum, taskInfo.TaskType, session, false, []byte(result))
 				if err != nil {
 					log.Warn("GetSeed m.RecieveTaskResult error %v", err)
 				}
@@ -228,13 +228,13 @@ func (m *Miner) GetSeedRand(actorID int64, sectorNum int64) (string, error) {
 			return session, err
 		}
 
-		pci, err := m.LotusApi.StateSectorPreCommitInfo(context.TODO(), minerAddr, util.NsSectorNum(taskInfo.SectorNum), tipset.Key())
+		pci, err := m.LotusApi.StateSectorPreCommitInfo(context.TODO(), minerAddr, util.NsSectorNum(*taskInfo.SectorNum), tipset.Key())
 		if err != nil {
 			return "", xerrors.Errorf("getting precommit info: %w", err)
 		}
 		if &pci == nil {
 			for {
-				pci, err = m.LotusApi.StateSectorPreCommitInfo(context.TODO(), minerAddr, util.NsSectorNum(taskInfo.SectorNum), tipset.Key())
+				pci, err = m.LotusApi.StateSectorPreCommitInfo(context.TODO(), minerAddr, util.NsSectorNum(*taskInfo.SectorNum), tipset.Key())
 				if err != nil {
 					return "", xerrors.Errorf("getting precommit info: %w", err)
 				}
@@ -250,11 +250,11 @@ func (m *Miner) GetSeedRand(actorID int64, sectorNum int64) (string, error) {
 		randHeight := pci.PreCommitEpoch + util.NsChainEpoch(m.WaitSeedEpoch)
 		m.ReqSession.Store(session, nil)
 		for randHeight > tipset.Height() {
-			log.Warnf("actorID %v sectorNum %d randHeight %d grantThan current tipset height %d", minerAddr, taskInfo.SectorNum, randHeight, tipset.Height())
+			log.Warnf("actorID %v sectorNum %d randHeight %d grantThan current tipset height %d", minerAddr, *taskInfo.SectorNum, randHeight, tipset.Height())
 			time.Sleep(30 * time.Second)
 			tipset, err = m.LotusApi.ChainHead(context.TODO())
 			if err != nil {
-				return "", xerrors.Errorf("actorID %v sectorNum %d randHeight %d WaitSeed error %v", minerAddr, taskInfo.SectorNum, randHeight, err)
+				return "", xerrors.Errorf("actorID %v sectorNum %d randHeight %d WaitSeed error %v", minerAddr, *taskInfo.SectorNum, randHeight, err)
 			}
 		}
 
@@ -306,12 +306,13 @@ func (m *Miner) RecieveTaskResult(actorID int64, sectorNum int64, taskType strin
 		Db:        *m.Db,
 	}
 	tx := m.Db.Begin()
+	var state1 int64 = util.RUNING
 	taskInfo := util.DbTaskInfo{
-		ActorID:   actorID,
-		SectorNum: sectorNum,
+		ActorID:   &actorID,
+		SectorNum: &sectorNum,
 		TaskType:  taskType,
 		LastReqID: reqID,
-		State:     util.RUNING,
+		State:     &state1,
 	}
 	if isErr {
 		if err := tx.Where(taskInfo).Model(taskInfo).Updates(map[string]interface{}{"state": state, "last_req_id": reqID}).Error; err != nil {

@@ -78,8 +78,8 @@ type RequestInfo struct {
 
 type DbTaskInfo struct {
 	Model
-	SectorNum int64  `gorm:"primary_key;AUTO_INCREMENT:false;default:0"`
-	ActorID   int64  `gorm:"primary_key;AUTO_INCREMENT:false;default:0"`
+	SectorNum *int64 `gorm:"primary_key;AUTO_INCREMENT:false;default:0"`
+	ActorID   *int64 `gorm:"primary_key;AUTO_INCREMENT:false;default:0"`
 	TaskType  string `gorm:"primary_key"`
 
 	SealerProof string `gorm:"default:'512MiB'"`
@@ -111,7 +111,7 @@ type DbTaskInfo struct {
 
 	Proof []byte `gorm:"type:mediumblob"`
 
-	State int64 `gorm:"default:0"`
+	State *int64 `gorm:"default:0"`
 }
 
 type DbTaskLog struct {

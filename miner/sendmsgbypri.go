@@ -52,9 +52,9 @@ func (m *Miner) SendPreCommitByPrivatKey(prihex string, actorID int64, sectorNum
 	defer func() {
 		if err != nil {
 			log.Errorf("sendMsg defer error %v", err)
-			err1 := m.RecieveTaskResult(actorID, taskInfo.SectorNum, taskType, session, true, []byte(err.Error()))
+			err1 := m.RecieveTaskResult(actorID, *taskInfo.SectorNum, taskType, session, true, []byte(err.Error()))
 			if err1 != nil {
-				log.Errorf("SendPreCommitByPrivatKey actorID %d sectorNum %d error %v", actorID, taskInfo.SectorNum, err1)
+				log.Errorf("SendPreCommitByPrivatKey actorID %d sectorNum %d error %v", actorID, *taskInfo.SectorNum, err1)
 			}
 			m.ReqSession.Delete(session)
 		}
@@ -73,7 +73,7 @@ func (m *Miner) SendPreCommitByPrivatKey(prihex string, actorID int64, sectorNum
 
 	params := &util.NsSectorPreCommitInfo{
 		Expiration:   util.NsChainEpoch(expiration),
-		SectorNumber: util.NsSectorNum(taskInfo.SectorNum),
+		SectorNumber: util.NsSectorNum(*taskInfo.SectorNum),
 		SealProof:    util.NsRegisteredSealProof(taskInfo.ProofType),
 
 		SealedCID:     sealedCID,
@@ -94,7 +94,7 @@ func (m *Miner) SendPreCommitByPrivatKey(prihex string, actorID int64, sectorNum
 	}
 	cbvarSession := session
 	cbvaractorID := actorID
-	cbvarsectorNum := taskInfo.SectorNum
+	cbvarsectorNum := *taskInfo.SectorNum
 	cbvartaskType := taskType
 	msgCID, err := m.sendMsgByPrivatKey(prihex, msg, func(isErr bool, result string) {
 		err := m.RecieveTaskResult(cbvaractorID, cbvarsectorNum, cbvartaskType, cbvarSession, isErr, []byte(result))
@@ -108,14 +108,14 @@ func (m *Miner) SendPreCommitByPrivatKey(prihex string, actorID int64, sectorNum
 	}
 
 	reqInfo = util.RequestInfo{
-		ActorID:   taskInfo.ActorID,
-		SectorNum: taskInfo.SectorNum,
+		ActorID:   *taskInfo.ActorID,
+		SectorNum: *taskInfo.SectorNum,
 		TaskType:  taskInfo.TaskType,
 		Session:   session,
 	}
 	_, errReserve := m.UpdateTaskLog(reqInfo, msgCID)
 	if errReserve != nil {
-		log.Warnf("SendPreCommitByPrivatKey actorID %d sectorNum %d msgCID %s update tasklog error %v", actorID, taskInfo.SectorNum, msgCID, errReserve)
+		log.Warnf("SendPreCommitByPrivatKey actorID %d sectorNum %d msgCID %s update tasklog error %v", actorID, *taskInfo.SectorNum, msgCID, errReserve)
 	}
 
 	return msgCID, err
@@ -161,9 +161,9 @@ func (m *Miner) SendCommitByPrivatKey(prihex string, actorID int64, sectorNum in
 	defer func() {
 		if err != nil {
 			log.Errorf("sendMsg defer error %v", err)
-			err1 := m.RecieveTaskResult(actorID, taskInfo.SectorNum, taskType, session, true, []byte(err.Error()))
+			err1 := m.RecieveTaskResult(actorID, *taskInfo.SectorNum, taskType, session, true, []byte(err.Error()))
 			if err1 != nil {
-				log.Errorf("SendCommitByPrivatKey actorID %d sectorNum %d error %v", actorID, taskInfo.SectorNum, err1)
+				log.Errorf("SendCommitByPrivatKey actorID %d sectorNum %d error %v", actorID, *taskInfo.SectorNum, err1)
 			}
 			m.ReqSession.Delete(session)
 		}
@@ -178,7 +178,7 @@ func (m *Miner) SendCommitByPrivatKey(prihex string, actorID int64, sectorNum in
 
 	enc := new(bytes.Buffer)
 	params := &util.NsProveCommitSectorParams{
-		SectorNumber: util.NsSectorNum(taskInfo.SectorNum),
+		SectorNumber: util.NsSectorNum(*taskInfo.SectorNum),
 		Proof:        proof,
 	}
 
@@ -196,7 +196,7 @@ func (m *Miner) SendCommitByPrivatKey(prihex string, actorID int64, sectorNum in
 	}
 	cbvarSession := session
 	cbvaractorID := actorID
-	cbvarsectorNum := taskInfo.SectorNum
+	cbvarsectorNum := *taskInfo.SectorNum
 	cbvartaskType := taskType
 	msgCID, err := m.sendMsgByPrivatKey(prihex, msg, func(isErr bool, result string) {
 		err := m.RecieveTaskResult(cbvaractorID, cbvarsectorNum, cbvartaskType, cbvarSession, isErr, []byte(result))
@@ -210,14 +210,14 @@ func (m *Miner) SendCommitByPrivatKey(prihex string, actorID int64, sectorNum in
 	}
 
 	reqInfo = util.RequestInfo{
-		ActorID:   taskInfo.ActorID,
-		SectorNum: taskInfo.SectorNum,
+		ActorID:   *taskInfo.ActorID,
+		SectorNum: *taskInfo.SectorNum,
 		TaskType:  taskInfo.TaskType,
 		Session:   cbvarSession,
 	}
 	_, errReserve := m.UpdateTaskLog(reqInfo, msgCID)
 	if errReserve != nil {
-		log.Warnf("SendCommitByPrivatKey actorID %d sectorNum %d msgCID %s update tasklog error %v", actorID, taskInfo.SectorNum, msgCID, errReserve)
+		log.Warnf("SendCommitByPrivatKey actorID %d sectorNum %d msgCID %s update tasklog error %v", actorID, *taskInfo.SectorNum, msgCID, errReserve)
 	}
 	return msgCID, err
 }

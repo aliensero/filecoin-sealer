@@ -124,11 +124,11 @@ func (w *Worker) sealCommitPhase1(
 			return
 		}
 
-		log.Infof(" params proofType %d sealedCID %s unsealedCID %s cacheDirPath %s sealedSectorPath %s sealedSectorPath sectorNum %d minerID %d ticket %v seed %v pieces %v", proofType, sealedCID, unsealedCID, taskInfo.CacheDirPath, taskInfo.SealedSectorPath, taskInfo.ActorID, taskInfo.SectorNum, ticketBytes, seedBytes, pieces)
+		log.Infof(" params proofType %d sealedCID %s unsealedCID %s cacheDirPath %s sealedSectorPath %s sealedSectorPath sectorNum %d minerID %d ticket %v seed %v pieces %v", proofType, sealedCID, unsealedCID, taskInfo.CacheDirPath, taskInfo.SealedSectorPath, *taskInfo.ActorID, *taskInfo.SectorNum, ticketBytes, seedBytes, pieces)
 
-		phase1Output, err = util.NsSealCommitPhase1(proofType, sealedCID, unsealedCID, taskInfo.CacheDirPath, taskInfo.SealedSectorPath, util.NsSectorNum(taskInfo.SectorNum), util.NsActorID(taskInfo.ActorID), util.NsSealRandomness(ticketBytes[:]), util.NsSeed(seedBytes[:]), pieces)
+		phase1Output, err = util.NsSealCommitPhase1(proofType, sealedCID, unsealedCID, taskInfo.CacheDirPath, taskInfo.SealedSectorPath, util.NsSectorNum(*taskInfo.SectorNum), util.NsActorID(*taskInfo.ActorID), util.NsSealRandomness(ticketBytes[:]), util.NsSeed(seedBytes[:]), pieces)
 		if err != nil {
-			minerAPIErr = w.MinerApi.RecieveTaskResult(taskInfo.ActorID, taskInfo.SectorNum, taskInfo.TaskType, session, true, []byte(err.Error()))
+			minerAPIErr = w.MinerApi.RecieveTaskResult(*taskInfo.ActorID, *taskInfo.SectorNum, taskInfo.TaskType, session, true, []byte(err.Error()))
 			return
 		}
 		if err == nil {
@@ -138,9 +138,9 @@ func (w *Worker) sealCommitPhase1(
 			}
 		}
 	}()
-	w.handleProccess(timebeat, closeBeat, process, stopchnl, taskInfo.ActorID, taskInfo.SectorNum, taskInfo.TaskType, &err, session)
+	w.handleProccess(timebeat, closeBeat, process, stopchnl, *taskInfo.ActorID, *taskInfo.SectorNum, taskInfo.TaskType, &err, session)
 
-	w.DeferMinerRecieve(taskInfo.ActorID, taskInfo.SectorNum, taskInfo.TaskType, session, phase1Output, err)
+	w.DeferMinerRecieve(*taskInfo.ActorID, *taskInfo.SectorNum, taskInfo.TaskType, session, phase1Output, err)
 
 	return phase1Output, err
 }
@@ -193,7 +193,7 @@ func (w *Worker) ProcessCommitPhase1(actorID int64, sectorNum int, binPath strin
 
 	defer func() {
 		if err != nil {
-			w.DeferMinerRecieve(taskInfo.ActorID, taskInfo.SectorNum, taskType, session, []byte{}, err)
+			w.DeferMinerRecieve(*taskInfo.ActorID, *taskInfo.SectorNum, taskType, session, []byte{}, err)
 		}
 	}()
 
@@ -204,7 +204,7 @@ func (w *Worker) ProcessCommitPhase1(actorID int64, sectorNum int, binPath strin
 
 func (w *Worker) processCommitPhase1(taskInfo util.DbTaskInfo, binPath, session string) (ChildProcessInfo, error) {
 	pid, err := w.ChildProcess(taskInfo, binPath, session)
-	return ChildProcessInfo{taskInfo.ActorID, taskInfo.SectorNum, pid}, err
+	return ChildProcessInfo{*taskInfo.ActorID, *taskInfo.SectorNum, pid}, err
 }
 
 func (w *Worker) SealCommitPhase2(actorID int64, sectorNum int64) (string, error) {
@@ -292,13 +292,13 @@ func (w *Worker) sealCommitPhase2(
 		// 	return
 		// }
 		phase1Output := taskInfo.C1Out
-		phase2Out, err = util.NsSealCommitPhase2(phase1Output, util.NsSectorNum(taskInfo.SectorNum), util.NsActorID(taskInfo.ActorID))
+		phase2Out, err = util.NsSealCommitPhase2(phase1Output, util.NsSectorNum(*taskInfo.SectorNum), util.NsActorID(*taskInfo.ActorID))
 
 	}()
 
-	w.handleProccess(timebeat, closeBeat, process, stopchnl, taskInfo.ActorID, taskInfo.SectorNum, taskInfo.TaskType, &err, session)
+	w.handleProccess(timebeat, closeBeat, process, stopchnl, *taskInfo.ActorID, *taskInfo.SectorNum, taskInfo.TaskType, &err, session)
 
-	w.DeferMinerRecieve(taskInfo.ActorID, taskInfo.SectorNum, taskInfo.TaskType, session, phase2Out, err)
+	w.DeferMinerRecieve(*taskInfo.ActorID, *taskInfo.SectorNum, taskInfo.TaskType, session, phase2Out, err)
 
 	return phase2Out, err
 
@@ -353,7 +353,7 @@ func (w *Worker) ProcessCommitPhase2(actorID int64, sectorNum int, binPath strin
 
 	defer func() {
 		if err != nil {
-			w.DeferMinerRecieve(taskInfo.ActorID, taskInfo.SectorNum, taskType, session, []byte{}, err)
+			w.DeferMinerRecieve(*taskInfo.ActorID, *taskInfo.SectorNum, taskType, session, []byte{}, err)
 		}
 	}()
 
@@ -364,5 +364,5 @@ func (w *Worker) ProcessCommitPhase2(actorID int64, sectorNum int, binPath strin
 
 func (w *Worker) processCommitPhase2(taskInfo util.DbTaskInfo, binPath, session string) (ChildProcessInfo, error) {
 	pid, err := w.ChildProcess(taskInfo, binPath, session)
-	return ChildProcessInfo{taskInfo.ActorID, taskInfo.SectorNum, pid}, err
+	return ChildProcessInfo{*taskInfo.ActorID, *taskInfo.SectorNum, pid}, err
 }
