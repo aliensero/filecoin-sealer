@@ -32,6 +32,7 @@ func main() {
 		runCmd,
 		unSealedFileCmd,
 		taskRunCmd,
+		recoveryCmd,
 	}
 
 	app := &cli.App{
@@ -308,6 +309,49 @@ var taskRunCmd = &cli.Command{
 
 		_, _, err = worker.TaskRun(taskInfo, minerApi, cctx.String("minerapi"), cctx.String("session"))
 		return err
+	},
+}
+
+var recoveryCmd = &cli.Command{
+	Name: "recovery",
+	Flags: []cli.Flag{
+		&cli.StringFlag{
+			Name:  "piececid",
+			Value: "baga6ea4seaqao7s73y24kcutaosvacpdjgfe5pw76ooefnyqw4ynr3d2y6x2mpq",
+		},
+		&cli.StringFlag{
+			Name:  "sealerProof",
+			Value: "32GiB",
+		},
+		&cli.Int64Flag{
+			Name:  "proofType",
+			Value: 8,
+		},
+		&cli.StringFlag{
+			Name: "cacheDir",
+		},
+		&cli.StringFlag{
+			Name: "unsealedDir",
+		},
+		&cli.StringFlag{
+			Name: "sealedFile",
+		},
+		&cli.Int64Flag{
+			Name: "sectorNum",
+		},
+		&cli.Int64Flag{
+			Name: "actorID",
+		},
+		&cli.StringFlag{
+			Name: "ticketHex",
+		},
+
+		&cli.StringFlag{
+			Name: "seedHex",
+		},
+	},
+	Action: func(cctx *cli.Context) error {
+		return worker.RecoverSealedFile(cctx.String("piececid"), cctx.String("sealerProof"), cctx.Int64("proofType"), cctx.String("cacheDir"), cctx.String("unsealedDir"), cctx.String("sealedFile"), cctx.Int64("sectorNum"), cctx.Int64("actorID"), cctx.String("ticketHex"), cctx.String("seedHex"))
 	},
 }
 

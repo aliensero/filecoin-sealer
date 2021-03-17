@@ -538,6 +538,8 @@ func (w *Worker) CheckMiner() (string, error) {
 				err1 := w.ConnMiner()
 				if err1 != nil {
 					log.Errorf("worker CheckMiner reconnect miner error %v retry %d", err1, i)
+				} else {
+					break
 				}
 			}
 		}
