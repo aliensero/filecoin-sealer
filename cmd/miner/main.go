@@ -11,6 +11,7 @@ import (
 	logging "github.com/ipfs/go-log/v2"
 	"github.com/urfave/cli/v2"
 	"gitlab.ns/lotus-worker/miner"
+	"gitlab.ns/lotus-worker/p2p"
 	"gitlab.ns/lotus-worker/util"
 )
 
@@ -24,6 +25,7 @@ func main() {
 
 	localCmds := []*cli.Command{
 		daemonCmd,
+		p2p.SubCmd,
 	}
 
 	app := cli.App{

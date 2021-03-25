@@ -21,9 +21,12 @@ $(FFI_PATH): .update-module ;
 	$(MAKE) -C $(FFI_PATH) $(FFI_DEPS:$(FFI_PATH)%=%)
 	@touch $@
 
+calibnet: GOFLAGS=-tags=calibnet
+calibnet: build
+
 ns-miner: $(BUILD_DEPS)
 	rm -f ns-miner
-	go build -o ns-miner ./cmd/miner
+	go build $(GOFLAGS) -o ns-miner ./cmd/miner
 .PHONY: ns-miner
 BINS+=ns-miner
 
