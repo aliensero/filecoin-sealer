@@ -1,13 +1,12 @@
 package p2p
 
 import (
+	"bytes"
 	"context"
 	"reflect"
 	"time"
 
-	"github.com/filecoin-project/lotus/build"
-	"github.com/filecoin-project/lotus/chain/types"
-	"github.com/filecoin-project/lotus/node"
+	"gitlab.ns/lotus-worker/util"
 
 	"github.com/libp2p/go-libp2p"
 	connmgr "github.com/libp2p/go-libp2p-connmgr"
@@ -17,11 +16,6 @@ import (
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
 	"go.uber.org/fx"
 	"golang.org/x/xerrors"
-
-	_ "github.com/filecoin-project/lotus/lib/sigs/bls"
-	_ "github.com/filecoin-project/lotus/lib/sigs/secp"
-	"github.com/filecoin-project/lotus/node/modules/dtypes"
-	"github.com/filecoin-project/lotus/node/modules/lp2p"
 )
 
 type P2PHostIn struct {
@@ -98,28 +92,36 @@ func Override(typ, constructor interface{}) fx.Option {
 	return fx.Provide(ctor)
 }
 
-type NsNetWorkerName = dtypes.NetworkName
-
 var LIBP2PONLY = []fx.Option{
 
 	Override(new(context.Context), context.Background()),
 
-	Override(special{0}, lp2p.DefaultTransports),
-	Override(special{1}, lp2p.AddrsFactory(nil, nil)),
-	Override(special{2}, lp2p.SmuxTransport(true)),
-	Override(special{3}, lp2p.NoRelay()),
-	Override(special{4}, lp2p.Security(true, false)),
-	Override(special{5}, func(infos []peer.AddrInfo) (lp2p.Libp2pOpts, error) {
+	Override(special{0}, util.NsDefaultTransports),
+	Override(special{1}, util.NsAddrsFactory(nil, nil)),
+	Override(special{2}, util.NsSmuxTransport(true)),
+	Override(special{3}, util.NsNoRelay()),
+	Override(special{4}, util.NsSecurity(true, false)),
+	Override(special{5}, func(infos []peer.AddrInfo) (util.NsLibp2pOpts, error) {
 		cm := connmgr.NewConnManager(50, 200, 20*time.Second)
 		for _, info := range infos {
 			cm.Protect(info.ID, "config-prot")
 		}
-		return lp2p.Libp2pOpts{
+		return util.NsLibp2pOpts{
 			Opts: []libp2p.Option{libp2p.ConnectionManager(cm)},
 		}, nil
 	}),
+	// Override(new(util.LotusApiStr), "https://calibration.node.glif.io"),
+	Override(new(util.LotusAPI), util.NewPubLotusApi1),
+	// Override(new(AddrStr), AddrStr("t01000")),
+	Override(new(util.NsAddress), func(as AddrStr) util.NsAddress {
+		a, err := util.NsNewFromString(string(as))
+		if err != nil {
+			panic(err)
+		}
+		return a
+	}),
 
-	Override(new(lp2p.RawHost), func(ctx context.Context, params P2PHostIn) host.Host {
+	Override(new(util.NsRawHost), func(ctx context.Context, params P2PHostIn) host.Host {
 
 		opts := []libp2p.Option{
 			libp2p.NoListenAddrs,
@@ -136,11 +138,11 @@ var LIBP2PONLY = []fx.Option{
 		}
 		return h
 	}),
-	Override(new(host.Host), lp2p.RoutedHost),
-	Override(new(lp2p.BaseIpfsRouting), func(ctx context.Context, lc fx.Lifecycle, host lp2p.RawHost, nn dtypes.NetworkName) (lp2p.BaseIpfsRouting, error) {
+	Override(new(host.Host), util.NsRoutedHost),
+	Override(new(util.NsBaseIpfsRouting), func(ctx context.Context, lc fx.Lifecycle, host util.NsRawHost, nn util.NsNetworkName) (util.NsBaseIpfsRouting, error) {
 		log.Infof("NetworkerName %v\n", nn)
 		opts := []dht.Option{dht.Mode(dht.ModeAuto),
-			dht.ProtocolPrefix(build.DhtProtocolName(nn)),
+			dht.ProtocolPrefix(util.NsDhtProtocolName(nn)),
 			dht.QueryFilter(dht.PublicQueryFilter),
 			dht.RoutingTableFilter(dht.PublicRoutingTableFilter),
 			dht.DisableProviders(),
@@ -163,7 +165,7 @@ var LIBP2PONLY = []fx.Option{
 	}),
 
 	Override(new([]peer.AddrInfo), func() []peer.AddrInfo {
-		infos, err := build.BuiltinBootstrap()
+		infos, err := util.NsBuiltinBootstrap()
 		if err != nil {
 			log.Error(err)
 			return nil
@@ -178,17 +180,73 @@ var LIBP2PONLY = []fx.Option{
 		}
 		return nil
 	}),
-	Override(invoke(2), func(ctx context.Context, h host.Host, nn dtypes.NetworkName) error {
-
+	Override(invoke(2), func(ctx context.Context, h host.Host, nn util.NsNetworkName, mr util.NsAddress, fa util.LotusAPI) error {
 		// topic := build.MessagesTopic(nn)
-		topic := build.BlocksTopic(nn)
+		topic := util.NsBlocksTopic(nn)
 		log.Infof("Subscribe topic %s", topic)
 		pub, err := pubsub.NewGossipSub(ctx, h)
 		if err != nil {
 			return err
 		}
+
+		var IsWinnerFunc = func(blkh *util.NsBlockHeader) {
+			tps, err := util.NsNewTipSet([]*util.NsBlockHeader{blkh})
+			if err != nil {
+				log.Errorf("NewTipSet error %v", err)
+				return
+			}
+			round := tps.Height() + util.NsChainEpoch(1)
+			mbi, err := fa.MinerGetBaseInfo(ctx, mr, round, tps.Key())
+			if err != nil || mbi == nil {
+				log.Errorf("get miner info mbi == nil %v error %v", mbi == nil, err)
+				return
+			}
+			beaconPrev := mbi.PrevBeaconEntry
+			bvals := mbi.BeaconEntries
+			rbase := beaconPrev
+			if len(bvals) > 0 {
+				rbase = bvals[len(bvals)-1]
+			}
+
+			buf := new(bytes.Buffer)
+			if err := mr.MarshalCBOR(buf); err != nil {
+				log.Error(xerrors.Errorf("failed to cbor marshal address: %w", err))
+				return
+			}
+
+			electionRand, err := util.NsDrawRandomness(rbase.Data, util.NsDomainSeparationTag_ElectionProofProduction, round, buf.Bytes())
+			if err != nil {
+				log.Error(xerrors.Errorf("failed to draw randomness: %w", err))
+				return
+			}
+			log.Infof("blk cid %v worker key %v electionRand %v", blkh.Cid(), mbi.WorkerKey, electionRand)
+			// vrfout, err := gen.ComputeVRF(ctx, func(ctx context.Context, addr address.Address, data []byte) (*crypto.Signature, error) {
+			// 	sm := sign.Sign()
+			// }, mbi.WorkerKey, electionRand)
+			// if err != nil {
+			// 	log.Error(xerrors.Errorf("failed to compute VRF: %w", err))
+			// 	return
+			// }
+
+			// ep := &types.ElectionProof{VRFProof: vrfout}
+			// j := ep.ComputeWinCount(mbi.MinerPower, mbi.NetworkPower)
+			// ep.WinCount = j
+			// log.Infof("wwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwww count %d", j)
+		}
+
+		blkChan := make(chan *util.NsBlockMsg, 5)
+		go func() {
+			for {
+				select {
+				case b := <-blkChan:
+					cpb := b
+					go IsWinnerFunc(cpb.Header)
+				}
+			}
+		}()
+
 		pub.RegisterTopicValidator(topic, func(ctx context.Context, pid peer.ID, msg *pubsub.Message) pubsub.ValidationResult {
-			blk, err := types.DecodeBlockMsg(msg.GetData())
+			blk, err := util.NsDecodeBlockMsg(msg.GetData())
 			if err != nil {
 				log.Error(err)
 				return pubsub.ValidationReject
@@ -201,7 +259,7 @@ var LIBP2PONLY = []fx.Option{
 		if err != nil {
 			return err
 		}
-
+		var tmpHeight util.NsChainEpoch = 0
 		for {
 			msg, err := sub.Next(ctx)
 			if err != nil {
@@ -209,14 +267,18 @@ var LIBP2PONLY = []fx.Option{
 				continue
 			}
 			if msg.ValidatorData != nil {
-				blk := msg.ValidatorData.(*types.BlockMsg)
+				blk := msg.ValidatorData.(*util.NsBlockMsg)
+				if blk.Header.Height >= tmpHeight {
+					blkChan <- blk
+					tmpHeight = blk.Header.Height
+				}
 				log.Infof("block cid %v height %v", blk.Header.Cid(), blk.Header.Height)
 			}
 		}
 	}),
 }
 
-func NewNoDefault(ctx context.Context, ctors ...fx.Option) (node.StopFunc, error) {
+func NewNoDefault(ctx context.Context, ctors ...fx.Option) (func(context.Context) error, error) {
 
 	app := fx.New(
 		fx.Options(ctors...),
@@ -236,3 +298,4 @@ func NewNoDefault(ctx context.Context, ctors ...fx.Option) (node.StopFunc, error
 
 type Ipv4 string
 type Ipv6 string
+type AddrStr string

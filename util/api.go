@@ -49,6 +49,12 @@ func NewPubLotusApi(addr string) (LotusAPI, jsonrpc.ClientCloser, error) {
 	return NsNewFullNodeRPC(context.TODO(), addr, nil)
 }
 
+type LotusApiStr string
+
+func NewPubLotusApi1(addr LotusApiStr) (LotusAPI, jsonrpc.ClientCloser, error) {
+	return NsNewFullNodeRPC(context.TODO(), string(addr), nil)
+}
+
 type MsgLookup struct {
 	Message   NsCid // Can be different than requested, in case it was replaced, but only gas values changed
 	Receipt   NsMessageReceipt

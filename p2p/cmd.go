@@ -3,6 +3,7 @@ package p2p
 import (
 	logging "github.com/ipfs/go-log/v2"
 	"github.com/urfave/cli/v2"
+	"gitlab.ns/lotus-worker/util"
 	"go.uber.org/fx"
 )
 
@@ -17,16 +18,28 @@ var SubCmd = &cli.Command{
 	Flags: []cli.Flag{
 		&cli.StringFlag{
 			Name:  "netname",
-			Usage: "Networker name",
+			Usage: "Networker name [testnetnet|calibrationnet]",
 			Value: "testnetnet",
 			//Value: "calibrationnet",
+		},
+		&cli.StringFlag{
+			Name:  "lotusapi",
+			Usage: "lotus api string [https://api.node.glif.io|https://calibration.node.glif.io]",
+			Value: "https://api.node.glif.io",
+		},
+		&cli.StringFlag{
+			Name:  "actor",
+			Usage: "actor id",
+			Value: "t01000",
 		},
 	},
 	Action: func(cctx *cli.Context) error {
 		ctx := cctx.Context
 		opts := []fx.Option{}
 		opts = append(opts, LIBP2PONLY...)
-		opts = append(opts, Override(new(NsNetWorkerName), NsNetWorkerName(cctx.String("netname"))))
+		opts = append(opts, Override(new(util.NsNetworkName), util.NsNetworkName(cctx.String("netname"))))
+		opts = append(opts, Override(new(util.LotusApiStr), util.LotusApiStr(cctx.String("lotusapi"))))
+		opts = append(opts, Override(new(AddrStr), AddrStr(cctx.String("actor"))))
 		stopFunc, err := NewNoDefault(ctx, opts...)
 		if err != nil {
 			return err

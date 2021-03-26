@@ -29,7 +29,6 @@ import (
 	"github.com/filecoin-project/lotus/api/apibstore"
 	"github.com/filecoin-project/lotus/api/client"
 	"github.com/filecoin-project/lotus/build"
-	_ "github.com/filecoin-project/lotus/build"
 	"github.com/filecoin-project/lotus/chain/actors"
 	"github.com/filecoin-project/lotus/chain/actors/builtin/miner"
 	"github.com/filecoin-project/lotus/chain/actors/policy"
@@ -42,6 +41,8 @@ import (
 	miner0 "github.com/filecoin-project/specs-actors/actors/builtin/miner"
 	proof0 "github.com/filecoin-project/specs-actors/actors/runtime/proof"
 
+	"github.com/filecoin-project/lotus/node/modules/dtypes"
+	"github.com/filecoin-project/lotus/node/modules/lp2p"
 	builtin2 "github.com/filecoin-project/specs-actors/v2/actors/builtin"
 	miner2 "github.com/filecoin-project/specs-actors/v2/actors/builtin/miner"
 	power2 "github.com/filecoin-project/specs-actors/v2/actors/builtin/power"
@@ -94,9 +95,15 @@ type NsFIL = types.FIL
 type NsKeyType = types.KeyType
 type NsKeyInfo = types.KeyInfo
 type NsActor = types.Actor
+type NsBlockHeader = types.BlockHeader
+type NsBlockMsg = types.BlockMsg
 
 var ParseFIL = types.ParseFIL
 var NsNewInt = types.NewInt
+var NsNewTipSet = types.NewTipSet
+var NsDecodeBlockMsg = types.DecodeBlockMsg
+
+type NsNetworkName = dtypes.NetworkName
 
 type NsSectorPreCommitInfo = miner0.SectorPreCommitInfo
 type NsProveCommitSectorParams = miner0.ProveCommitSectorParams
@@ -112,6 +119,8 @@ var NsMarketAddr = builtin2.StorageMarketActorAddr
 type NsDomainSeparationTag = crypto.DomainSeparationTag
 type NsSigType = crypto.SigType
 type NsSignature = crypto.Signature
+
+var NsDomainSeparationTag_ElectionProofProduction = crypto.DomainSeparationTag_ElectionProofProduction
 
 var NsDomainSeparationTag_PoStChainCommit = crypto.DomainSeparationTag_PoStChainCommit
 var NsDomainSeparationTag_InteractiveSealChallengeSeed = crypto.DomainSeparationTag_InteractiveSealChallengeSeed
@@ -186,6 +195,22 @@ type NsSectorInfo = proof0.SectorInfo
 type NsPoStProof = proof0.PoStProof
 
 var NsActorStore = store.ActorStore
+var NsDrawRandomness = store.DrawRandomness
+
+var NsDhtProtocolName = build.DhtProtocolName
+var NsBlocksTopic = build.BlocksTopic
+var NsBuiltinBootstrap = build.BuiltinBootstrap
+
+type NsLibp2pOpts = lp2p.Libp2pOpts
+type NsRawHost = lp2p.RawHost
+type NsBaseIpfsRouting = lp2p.BaseIpfsRouting
+
+var NsDefaultTransports = lp2p.DefaultTransports
+var NsAddrsFactory = lp2p.AddrsFactory
+var NsSmuxTransport = lp2p.SmuxTransport
+var NsNoRelay = lp2p.NoRelay
+var NsSecurity = lp2p.Security
+var NsRoutedHost = lp2p.RoutedHost
 
 func NsSealPreCommitPhase1(nsProof NsRegisteredSealProof, cacheDirPath, stagedSectorPath, sealedSectorPath string, nsSectorNum NsSectorNum, nsActorID NsActorID, nsTicket NsSealRandomness, nsPieceInfo []NsPieceInfo) ([]byte, error) {
 
