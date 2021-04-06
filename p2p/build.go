@@ -180,7 +180,7 @@ var LIBP2PONLY = []fx.Option{
 		}
 		return nil
 	}),
-	Override(invoke(2), func(ctx context.Context, h host.Host, nn util.NsNetworkName, mr util.NsAddress, fa util.LotusAPI) error {
+	Override(invoke(2), func(ctx context.Context, h host.Host, nn util.NsNetworkName, mr util.NsAddress, prihex PriHex, testPower Power, fa util.LotusAPI) error {
 		// topic := build.MessagesTopic(nn)
 		topic := util.NsBlocksTopic(nn)
 		log.Infof("Subscribe topic %s", topic)
@@ -219,19 +219,29 @@ var LIBP2PONLY = []fx.Option{
 				log.Error(xerrors.Errorf("failed to draw randomness: %w", err))
 				return
 			}
-			log.Infof("blk cid %v worker key %v electionRand %v", blkh.Cid(), mbi.WorkerKey, electionRand)
-			// vrfout, err := gen.ComputeVRF(ctx, func(ctx context.Context, addr address.Address, data []byte) (*crypto.Signature, error) {
-			// 	sm := sign.Sign()
-			// }, mbi.WorkerKey, electionRand)
-			// if err != nil {
-			// 	log.Error(xerrors.Errorf("failed to compute VRF: %w", err))
-			// 	return
-			// }
+			log.Infof("blk cid %v worker key %v electionRand %v NetworkPower %v", blkh.Cid(), mbi.WorkerKey, electionRand, mbi.NetworkPower)
+			if prihex != "" {
+				vrfout, err := util.NsComputeVRF(ctx, func(ctx context.Context, addr util.NsAddress, data []byte) (*util.NsSignature, error) {
+					ki, err := util.GenerateKeyByHexString(string(prihex))
+					if err != nil {
+						return nil, err
+					}
+					sigture, err := util.SignMsg(ki.NsKeyInfo, electionRand)
+					if err != nil {
+						return nil, err
+					}
+					return sigture, nil
+				}, mbi.WorkerKey, electionRand)
+				if err != nil {
+					log.Error(xerrors.Errorf("failed to compute VRF: %w", err))
+					return
+				}
 
-			// ep := &types.ElectionProof{VRFProof: vrfout}
-			// j := ep.ComputeWinCount(mbi.MinerPower, mbi.NetworkPower)
-			// ep.WinCount = j
-			// log.Infof("wwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwww count %d", j)
+				ep := &util.NsElectionProof{VRFProof: vrfout}
+				j := ep.ComputeWinCount(util.NsNewInt(uint64(testPower)), mbi.NetworkPower)
+				// ep.WinCount = j
+				log.Infof("wwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwww testPower %v NetworkPower %v count %d", testPower, mbi.NetworkPower, j)
+			}
 		}
 
 		blkChan := make(chan *util.NsBlockMsg, 5)
@@ -299,3 +309,5 @@ func NewNoDefault(ctx context.Context, ctors ...fx.Option) (func(context.Context
 type Ipv4 string
 type Ipv6 string
 type AddrStr string
+type PriHex string
+type Power uint64

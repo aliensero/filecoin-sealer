@@ -32,6 +32,15 @@ var SubCmd = &cli.Command{
 			Usage: "actor id",
 			Value: "t01000",
 		},
+		&cli.StringFlag{
+			Name:  "prihex",
+			Usage: "private key hex",
+		},
+		&cli.Uint64Flag{
+			Name:  "testpower",
+			Usage: "test miner power",
+			Value: 10995116277760, // 10TiB
+		},
 	},
 	Action: func(cctx *cli.Context) error {
 		ctx := cctx.Context
@@ -40,6 +49,8 @@ var SubCmd = &cli.Command{
 		opts = append(opts, Override(new(util.NsNetworkName), util.NsNetworkName(cctx.String("netname"))))
 		opts = append(opts, Override(new(util.LotusApiStr), util.LotusApiStr(cctx.String("lotusapi"))))
 		opts = append(opts, Override(new(AddrStr), AddrStr(cctx.String("actor"))))
+		opts = append(opts, Override(new(PriHex), PriHex(cctx.String("prihex"))))
+		opts = append(opts, Override(new(Power), Power(cctx.Uint64("testpower"))))
 		stopFunc, err := NewNoDefault(ctx, opts...)
 		if err != nil {
 			return err

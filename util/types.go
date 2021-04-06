@@ -32,6 +32,7 @@ import (
 	"github.com/filecoin-project/lotus/chain/actors"
 	"github.com/filecoin-project/lotus/chain/actors/builtin/miner"
 	"github.com/filecoin-project/lotus/chain/actors/policy"
+	"github.com/filecoin-project/lotus/chain/gen"
 	"github.com/filecoin-project/lotus/chain/store"
 	"github.com/filecoin-project/lotus/chain/types"
 	"github.com/filecoin-project/lotus/lib/sigs"
@@ -97,6 +98,7 @@ type NsKeyInfo = types.KeyInfo
 type NsActor = types.Actor
 type NsBlockHeader = types.BlockHeader
 type NsBlockMsg = types.BlockMsg
+type NsElectionProof = types.ElectionProof
 
 var ParseFIL = types.ParseFIL
 var NsNewInt = types.NewInt
@@ -211,6 +213,8 @@ var NsSmuxTransport = lp2p.SmuxTransport
 var NsNoRelay = lp2p.NoRelay
 var NsSecurity = lp2p.Security
 var NsRoutedHost = lp2p.RoutedHost
+
+var NsComputeVRF = gen.ComputeVRF
 
 func NsSealPreCommitPhase1(nsProof NsRegisteredSealProof, cacheDirPath, stagedSectorPath, sealedSectorPath string, nsSectorNum NsSectorNum, nsActorID NsActorID, nsTicket NsSealRandomness, nsPieceInfo []NsPieceInfo) ([]byte, error) {
 

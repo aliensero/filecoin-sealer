@@ -1,147 +1,159 @@
 package main
 
 import (
-	"context"
-	"encoding/hex"
-	"errors"
+	"crypto/sha256"
+	"encoding/binary"
 	"fmt"
-	"os"
 
-	"github.com/docker/go-units"
-	"gitlab.ns/lotus-worker/util"
-	"go.uber.org/fx"
-	"golang.org/x/xerrors"
+	"golang.org/x/exp/mmap"
 )
 
 func main() {
-	args := os.Args
-	if len(args) < 2 {
-		fmt.Println("[cache_dir] [sealed_dir]")
-		return
-	}
-	fmt.Printf("cache_dir %s sealed_dir %s\n", args[1], args[2])
-	RecoverSealedFile("baga6ea4seaqdsvqopmj2soyhujb72jza76t4wpq5fzifvm3ctz47iyytkewnubq", "512MiB", 7, args[1], "/var/tmp/filecoin-proof-parameters/unsealed-536870912", args[2], 200, 1044, "dcca61251469eb6a5d74b0d6ae59d3666752f2ffae78faf5cb14ef9134bd1820")
-}
-
-func RecoverSealedFile(piececid string, sealerProof string, proofType int64, cacheDirPath, stagedSectorPath, sealedSectorPath string, sectorNum int64, actorID int64, ticketHex string) {
-
-	sectorSizeInt, err := units.RAMInBytes(sealerProof)
-
-	if err != nil {
-		fmt.Println(xerrors.Errorf("error parsing sector size (specify as \"32GiB\", for instance): %w", err))
-		return
-	}
-
-	pieces, err := util.NewNsPieceInfo(piececid, sectorSizeInt)
+	at, err := mmap.Open("/var/tmp/filecoin-parents/v28-sdr-parent-652bae61e906c0732e9eb95b1217cfa6afcce221ff92a8aedf62fa778fa765bc.cache")
 	if err != nil {
 		fmt.Println(err)
 		return
 	}
-	ticketBtyes, err := hex.DecodeString(ticketHex)
-	if err != nil {
-		fmt.Println(err)
-		return
+	// buf := make([]byte, 14*4)
+	// at.ReadAt(buf, 63*14*4)
+	// for i := 0; i < 14; i++ {
+	// 	start := i * 4
+	// 	end := start + 4
+	// 	node := binary.LittleEndian.Uint32(buf[start:end])
+	// 	fmt.Println(node)
+	// }
+	var pb byte = 9
+	provider_id := make([]byte, 32)
+	for i := 0; i < 32; i++ {
+		provider_id[i] = pb
 	}
-	ticket := util.NsSealRandomness(ticketBtyes[:])
-	fproofType := util.NsRegisteredSealProof(proofType)
-	fsectorNum := util.NsSectorNum(sectorNum)
-	minerID := util.NsActorID(actorID)
-	phase1Output, err := util.NsSealPreCommitPhase1(fproofType, cacheDirPath, stagedSectorPath, sealedSectorPath, fsectorNum, minerID, ticket, pieces)
-	if err != nil {
-		fmt.Println(err)
-		return
+	var tb byte = 1
+	ticket := make([]byte, 32)
+	for i := 0; i < 32; i++ {
+		ticket[i] = tb
 	}
-	sealedCID, unsealedCID, err := util.NsSealPreCommitPhase2(phase1Output, cacheDirPath, sealedSectorPath)
-	if err != nil {
-		fmt.Println(err)
-		return
+	commd := []byte{252, 126, 146, 130, 150, 229, 22, 250, 173, 233, 134, 178, 143, 146, 212, 74, 79, 36, 185, 53, 72, 82, 35, 55, 106, 121, 144, 39, 188, 24, 248, 51}
+	porepseed := []byte{99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99}
+	sector_id := []byte{0, 0, 0, 0, 0, 0, 0, 0}
+	fmt.Println(provider_id)
+	fmt.Println(sector_id)
+	fmt.Println(ticket)
+	fmt.Println(commd)
+	fmt.Println(porepseed)
+	sha := sha256.New()
+	sha.Write(provider_id)
+	sha.Write(sector_id)
+	sha.Write(ticket)
+	sha.Write(commd)
+	sha.Write(porepseed)
+	rid := sha.Sum(nil)
+	fmt.Println(rid)
+
+	var layerIndex uint32 = 1
+	var node uint64 = 0
+	lbuf := make([]byte, 4)
+	binary.BigEndian.PutUint32(lbuf, layerIndex)
+	nbuf := make([]byte, 8)
+	binary.BigEndian.PutUint64(nbuf, node)
+	sha2 := sha256.New()
+	fmt.Println(lbuf)
+	fmt.Println(nbuf)
+	res := make([]byte, 20)
+	for i := 0; i < 20; i++ {
+		res[i] = 0
 	}
-	fmt.Printf("comm_d %v comm_r %v", unsealedCID, sealedCID)
+	sha2.Write(rid)
+	sha2.Write(lbuf)
+	sha2.Write(nbuf)
+	sha2.Write(res)
+	n0 := sha2.Sum(nil)
+	fmt.Println(n0)
+	ni := &NodeInfo{}
+	w := make(chan map[uint32][]byte)
+	r := make(chan map[uint32][]byte)
+	ni.NewNi(w, r, at, 1)
+	node = 1
+	binary.BigEndian.PutUint64(nbuf, node)
+	go ni.Start(rid, lbuf, nbuf, uint32(node), 6)
+	w <- map[uint32][]byte{uint32(0): n0}
+	n1 := <-r
+	fmt.Println(n1)
 }
 
-type NoSchedulingObj struct {
-	Noschs []NoSchedulingInfo
+type NodeInfo struct {
+	parents     [][]byte
+	cacheMap    *mmap.ReaderAt
+	receiveData chan map[uint32][]byte
+	readyCnt    int
+	nodeID      uint64
+	setCache    []uint32
+	writeDate   chan map[uint32][]byte
 }
 
-type NoSchedulingInfo struct {
-	Hostname  string
-	Tasktypes []string
-}
+func (ni *NodeInfo) NewNi(r chan map[uint32][]byte, w chan map[uint32][]byte, reader *mmap.ReaderAt, nodeID uint64) {
 
-type ti interface {
-	ti1()
-}
-
-type tis1 struct{}
-
-func (t tis1) ti1() {
-	fmt.Println("tis1")
-}
-
-type tis2 struct {
-	ti
-}
-
-func invokt(s s1) {
-	fmt.Println(s)
-}
-
-type param struct {
-	fx.In
-	Lifecycle fx.Lifecycle
-	Name      string
-}
-
-type s1 struct {
-	name string
-}
-
-func News1(p param) s1 {
-	ret := s1{p.Name}
-	p.Lifecycle.Append(fx.Hook{
-		OnStart: func(context.Context) error {
-			fmt.Printf("ret %v\n", p.Name)
-			return nil
-		},
-	})
-	return ret
-}
-
-func testDB() {
-
-	db, err := util.InitMysql("dockeruser", "password", "127.0.0.1", "3306", "db_worker")
-	if err != nil {
-		fmt.Println(err)
-		return
+	ni.parents = make([][]byte, 0, 14)
+	ni.cacheMap = reader
+	ni.receiveData = r
+	ni.writeDate = w
+	ni.nodeID = nodeID
+	ni.setCache = make([]uint32, 0, 14)
+	offset := nodeID * 14 * 4
+	buf := make([]byte, 56)
+	ni.cacheMap.ReadAt(buf, int64(offset))
+	for i := 0; i < 14; i++ {
+		start := i * 4
+		end := start + 4
+		node := binary.LittleEndian.Uint32(buf[start:end])
+		ni.setCache = append(ni.setCache, node)
 	}
-
-	var taskInfo util.DbTaskInfo
-	err = db.Debug().Where("actor_id=1034 and sector_num=333").Find(&taskInfo).Error
-	if err != nil {
-		fmt.Errorf("%v\n", err)
-		return
-	}
-	fmt.Printf("%s\n", string(taskInfo.C1Out))
-	phase2Out, err := util.NsSealCommitPhase2(taskInfo.C1Out, util.NsSectorNum(*taskInfo.SectorNum), util.NsActorID(*taskInfo.ActorID))
-	if err != nil {
-		fmt.Errorf("%v\n", err)
-		return
-	}
-	fmt.Println(phase2Out)
 }
 
-func test() ([]byte, error) {
-	err := errors.New("test error")
-	return []byte{1, 2}, err
-}
+func (ni *NodeInfo) Start(replacat_id []byte, lbuf []byte, nbuf []byte, node uint32, end int) {
 
-func TestSigture() {
-	// ph, err := util.GeneratePriKeyHex("bls")
-	// fmt.Printf("private key %s error1 %v\n", ph, err)
-	// ph := "7b2254797065223a22626c73222c22507269766174654b6579223a224665577258514a48436762354c4d346d685733734f736e447278622b5a6d4670467a74496269754870426b3d227d"
-	// addr, err2 := util.GenerateAddrByHexPri(ph)
-	// fmt.Printf("address %s err2 %v\n", addr, err2)
-	// util.TestGenerateCreateMinerSigMsg("7b2254797065223a22626c73222c22507269766174654b6579223a224665577258514a48436762354c4d346d685733734f736e447278622b5a6d4670467a74496269754870426b3d227d", 8, 3, "http://127.0.0.1:1234/rpc/v0", "")
-	util.TestGenerateCreateMinerSigMsg("7b2254797065223a22626c73222c22507269766174654b6579223a224665577258514a48436762354c4d346d685733734f736e447278622b5a6d4670467a74496269754870426b3d227d", 8, 2, "https://calibration.node.glif.io/rpc/v0", "")
-
+	sha := sha256.New()
+	sha.Write(replacat_id)
+	sha.Write(lbuf)
+	sha.Write(nbuf)
+	res := make([]byte, 20)
+	for i := 0; i < 20; i++ {
+		res[i] = 0
+	}
+	sha.Write(res)
+	r1 := sha.Sum(nil)
+	for {
+		if ni.readyCnt == end {
+			break
+		}
+		data := <-ni.receiveData
+		for k, v := range data {
+			for _, n := range ni.setCache {
+				if n == k {
+					ni.parents = append(ni.parents, v)
+					ni.readyCnt++
+				}
+			}
+		}
+		fmt.Println(ni.parents)
+		rs := make([][]byte, 6)
+		for i := 0; i < 6; i++ {
+			sha.Reset()
+			for _, p := range ni.parents {
+				sha.Write(p)
+			}
+			rs[i] = sha.Sum(nil)
+		}
+		sha.Reset()
+		sha.Write(ni.parents[0])
+		r2 := sha.Sum(nil)
+		sha.Reset()
+		sha.Write(r1)
+		for i := 0; i < 6; i++ {
+			sha.Write(rs[i])
+		}
+		sha.Write(r2)
+		hr := sha.Sum(nil)
+		fmt.Println(hr)
+		ni.writeDate <- map[uint32][]byte{node: hr}
+	}
 }
