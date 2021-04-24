@@ -19,7 +19,7 @@ require (
 	github.com/filecoin-project/go-state-types v0.1.0
 	github.com/filecoin-project/lotus v0.0.0-00010101000000-000000000000
 	github.com/filecoin-project/specs-actors v0.9.13
-	github.com/filecoin-project/specs-actors/v2 v2.3.4
+	github.com/filecoin-project/specs-actors/v2 v2.3.5-0.20210114162132-5b58b773f4fb
 	github.com/google/uuid v1.2.0
 	github.com/gorilla/mux v1.8.0
 	github.com/ipfs/go-cid v0.0.7
@@ -29,10 +29,9 @@ require (
 	github.com/libp2p/go-libp2p-connmgr v0.2.4
 	github.com/libp2p/go-libp2p-core v0.7.0
 	github.com/libp2p/go-libp2p-kad-dht v0.11.1
-	github.com/libp2p/go-libp2p-pubsub v0.4.1
+	github.com/libp2p/go-libp2p-pubsub v0.4.2-0.20210212194758-6c1addf493eb
 	github.com/urfave/cli/v2 v2.3.0
 	go.uber.org/fx v1.13.1
-	golang.org/x/crypto v0.0.0-20200820211705-5c72a883971a
-	golang.org/x/exp v0.0.0-20210220032938-85be41e4509f
+	golang.org/x/exp v0.0.0-20210220032938-85be41e4509f // indirect
 	golang.org/x/xerrors v0.0.0-20200804184101-5ec99f83aff1
 )

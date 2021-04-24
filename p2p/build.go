@@ -196,7 +196,16 @@ var LIBP2PONLY = []fx.Option{
 				return
 			}
 			round := tps.Height() + util.NsChainEpoch(1)
-			mbi, err := fa.MinerGetBaseInfo(ctx, mr, round, tps.Key())
+			msgs, err := fa.MpoolSelect(ctx, tps.Key(), 0.81)
+			if len(msgs) > 0 {
+				log.Infof("select msgs %v error %v", msgs[0], err)
+			}
+			curTipset, err := fa.ChainHead(ctx)
+			if err != nil {
+				log.Errorf("ChainGetTipSeterror %v", err)
+				return
+			}
+			mbi, err := fa.MinerGetBaseInfo(ctx, mr, curTipset.Height(), curTipset.Key())
 			if err != nil || mbi == nil {
 				log.Errorf("get miner info mbi == nil %v error %v", mbi == nil, err)
 				return

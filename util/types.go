@@ -26,8 +26,8 @@ import (
 
 	"github.com/filecoin-project/go-address"
 	"github.com/filecoin-project/lotus/api"
-	"github.com/filecoin-project/lotus/api/apibstore"
 	"github.com/filecoin-project/lotus/api/client"
+	"github.com/filecoin-project/lotus/blockstore"
 	"github.com/filecoin-project/lotus/build"
 	"github.com/filecoin-project/lotus/chain/actors"
 	"github.com/filecoin-project/lotus/chain/actors/builtin/miner"
@@ -175,7 +175,7 @@ type NsMessageSendSpec = api.MessageSendSpec
 type LotusAPI = api.FullNode
 type NsPartition = api.Partition
 
-var NsNewAPIBlockstore = apibstore.NewAPIBlockstore
+var NsNewAPIBlockstore = blockstore.NewAPIBlockstore
 
 var NsCurrentNetwork = address.CurrentNetwork
 var NsMainNet = address.Mainnet
