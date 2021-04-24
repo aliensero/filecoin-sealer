@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"path/filepath"
 
 	commcid "github.com/filecoin-project/go-fil-commcid"
 	"github.com/filecoin-project/go-jsonrpc"
@@ -38,9 +39,11 @@ import (
 	"github.com/filecoin-project/lotus/lib/sigs"
 	_ "github.com/filecoin-project/lotus/lib/sigs/bls"
 	_ "github.com/filecoin-project/lotus/lib/sigs/secp"
+	lminer "github.com/filecoin-project/lotus/miner"
 
 	miner0 "github.com/filecoin-project/specs-actors/actors/builtin/miner"
 	proof0 "github.com/filecoin-project/specs-actors/actors/runtime/proof"
+	proof2 "github.com/filecoin-project/specs-actors/v2/actors/runtime/proof"
 
 	"github.com/filecoin-project/lotus/node/modules/dtypes"
 	"github.com/filecoin-project/lotus/node/modules/lp2p"
@@ -99,6 +102,8 @@ type NsActor = types.Actor
 type NsBlockHeader = types.BlockHeader
 type NsBlockMsg = types.BlockMsg
 type NsElectionProof = types.ElectionProof
+type NsBeaconEntry = types.BeaconEntry
+type NsTicket = types.Ticket
 
 var ParseFIL = types.ParseFIL
 var NsNewInt = types.NewInt
@@ -123,6 +128,7 @@ type NsSigType = crypto.SigType
 type NsSignature = crypto.Signature
 
 var NsDomainSeparationTag_ElectionProofProduction = crypto.DomainSeparationTag_ElectionProofProduction
+var NsDomainSeparationTag_TicketProduction = crypto.DomainSeparationTag_TicketProduction
 
 var NsDomainSeparationTag_PoStChainCommit = crypto.DomainSeparationTag_PoStChainCommit
 var NsDomainSeparationTag_InteractiveSealChallengeSeed = crypto.DomainSeparationTag_InteractiveSealChallengeSeed
@@ -170,10 +176,13 @@ type NsMinerPartition = miner.Partition
 var NsWithdrawBalance = miner.Methods.WithdrawBalance
 var NsMinerLoad = miner.Load
 
-type NsMessageSendSpec = api.MessageSendSpec
+type NsMiningBase = lminer.MiningBase
 
+type NsMessageSendSpec = api.MessageSendSpec
 type LotusAPI = api.FullNode
 type NsPartition = api.Partition
+type NsMiningBaseInfo = api.MiningBaseInfo
+type NsBlockTemplate = api.BlockTemplate
 
 var NsNewAPIBlockstore = blockstore.NewAPIBlockstore
 
@@ -202,6 +211,8 @@ var NsDrawRandomness = store.DrawRandomness
 var NsDhtProtocolName = build.DhtProtocolName
 var NsBlocksTopic = build.BlocksTopic
 var NsBuiltinBootstrap = build.BuiltinBootstrap
+var NsTicketRandomnessLookback = build.TicketRandomnessLookback
+var NsBlockDelaySecs = build.BlockDelaySecs
 
 type NsLibp2pOpts = lp2p.Libp2pOpts
 type NsRawHost = lp2p.RawHost
@@ -213,6 +224,8 @@ var NsSmuxTransport = lp2p.SmuxTransport
 var NsNoRelay = lp2p.NoRelay
 var NsSecurity = lp2p.Security
 var NsRoutedHost = lp2p.RoutedHost
+
+type NsSignFunc = gen.SignFunc
 
 var NsComputeVRF = gen.ComputeVRF
 
@@ -616,4 +629,23 @@ func TestGenerateCreateMinerSigMsg(ph string, sealProofType int64, nonce uint64,
 		return
 	}
 	fmt.Printf("msg cid %s\n", cid.String())
+}
+
+func GenerateWinningPoSt(ctx context.Context, actorID abi.ActorID, sectorInfo []proof2.SectorInfo, randomness abi.PoStRandomness, path string) ([]proof2.PoStProof, error) {
+	randomness[31] &= 0x3f
+
+	out := make([]ffi.PrivateSectorInfo, 0, len(sectorInfo))
+	for _, ss := range sectorInfo {
+		s := ss
+		out = append(out, ffi.PrivateSectorInfo{
+			CacheDirPath:     filepath.Join(path, "cache", fmt.Sprintf("s-t0%d-%d", actorID, s.SectorNumber)),
+			PoStProofType:    abi.RegisteredPoStProof(s.SealProof),
+			SealedSectorPath: filepath.Join(path, "sealed", fmt.Sprintf("s-t0%d-%d", actorID, s.SectorNumber)),
+			SectorInfo:       s,
+		})
+	}
+
+	privsectors := ffi.NewSortedPrivateSectorInfo(out...)
+
+	return ffi.GenerateWinningPoSt(actorID, privsectors, randomness)
 }

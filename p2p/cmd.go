@@ -41,6 +41,10 @@ var SubCmd = &cli.Command{
 			Usage: "test miner power",
 			Value: 10995116277760, // 10TiB
 		},
+		&cli.StringFlag{
+			Name:  "sealedpath",
+			Value: "/root/miner_storage",
+		},
 	},
 	Action: func(cctx *cli.Context) error {
 		ctx := cctx.Context
@@ -51,6 +55,7 @@ var SubCmd = &cli.Command{
 		opts = append(opts, Override(new(AddrStr), AddrStr(cctx.String("actor"))))
 		opts = append(opts, Override(new(PriHex), PriHex(cctx.String("prihex"))))
 		opts = append(opts, Override(new(Power), Power(cctx.Uint64("testpower"))))
+		opts = append(opts, Override(new(SealedPath), SealedPath(cctx.String("sealedpath"))))
 		stopFunc, err := NewNoDefault(ctx, opts...)
 		if err != nil {
 			return err

@@ -180,7 +180,7 @@ var LIBP2PONLY = []fx.Option{
 		}
 		return nil
 	}),
-	Override(invoke(2), func(ctx context.Context, h host.Host, nn util.NsNetworkName, mr util.NsAddress, prihex PriHex, testPower Power, fa util.LotusAPI) error {
+	Override(invoke(2), func(ctx context.Context, h host.Host, nn util.NsNetworkName, mr util.NsAddress, prihex PriHex, testPower Power, fa util.LotusAPI, path SealedPath) error {
 		// topic := build.MessagesTopic(nn)
 		topic := util.NsBlocksTopic(nn)
 		log.Infof("Subscribe topic %s", topic)
@@ -196,16 +196,12 @@ var LIBP2PONLY = []fx.Option{
 				return
 			}
 			round := tps.Height() + util.NsChainEpoch(1)
-			msgs, err := fa.MpoolSelect(ctx, tps.Key(), 0.81)
-			if len(msgs) > 0 {
-				log.Infof("select msgs %v error %v", msgs[0], err)
-			}
 			curTipset, err := fa.ChainHead(ctx)
 			if err != nil {
 				log.Errorf("ChainGetTipSeterror %v", err)
 				return
 			}
-			mbi, err := fa.MinerGetBaseInfo(ctx, mr, curTipset.Height(), curTipset.Key())
+			mbi, err := fa.MinerGetBaseInfo(ctx, mr, round, curTipset.Key())
 			if err != nil || mbi == nil {
 				log.Errorf("get miner info mbi == nil %v error %v", mbi == nil, err)
 				return
@@ -247,9 +243,51 @@ var LIBP2PONLY = []fx.Option{
 				}
 
 				ep := &util.NsElectionProof{VRFProof: vrfout}
-				j := ep.ComputeWinCount(util.NsNewInt(uint64(testPower)), mbi.NetworkPower)
-				// ep.WinCount = j
-				log.Infof("wwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwww testPower %v NetworkPower %v count %d", testPower, mbi.NetworkPower, j)
+				curPower := mbi.MinerPower
+				if testPower != 0 {
+					curPower = util.NsNewInt(uint64(testPower))
+				}
+				j := ep.ComputeWinCount(curPower, mbi.NetworkPower)
+				ep.WinCount = j
+				log.Infof("wwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwww curPower %v NetworkPower %v count %d", curPower, mbi.NetworkPower, j)
+				if ep.WinCount < 1 {
+					return
+				}
+
+				ticket := util.NsTicket{
+					VRFProof: vrfout,
+				}
+
+				msgs, err := fa.MpoolSelect(ctx, curTipset.Key(), ticket.Quality())
+				if len(msgs) > 0 {
+					log.Infof("select msgs %v error %v", msgs[0], err)
+				}
+				if err != nil {
+					log.Errorf("select msgs error %v", err)
+					return
+				}
+				actorID, err := util.NsIDFromAddress(mr)
+				if err != nil {
+					log.Errorf("NsIDFromAddress miner %v error %v", mr, err)
+					return
+				}
+				wpostProof, err := util.GenerateWinningPoSt(ctx, util.NsActorID(actorID), mbi.Sectors, electionRand, string(path))
+				if err != nil {
+					log.Errorf("GenerateWinningPoSt miner %v error %v", mr, err)
+					return
+				}
+				uts := curTipset.MinTimestamp() + util.NsBlockDelaySecs
+				fa.MinerCreateBlock(ctx, &util.NsBlockTemplate{
+					Miner:            mr,
+					Parents:          curTipset.Key(),
+					Ticket:           &ticket,
+					Eproof:           ep,
+					BeaconValues:     bvals,
+					Messages:         msgs,
+					Epoch:            round,
+					Timestamp:        uts,
+					WinningPoStProof: wpostProof,
+				})
 			}
 		}
 
@@ -320,3 +358,4 @@ type Ipv6 string
 type AddrStr string
 type PriHex string
 type Power uint64
+type SealedPath string
