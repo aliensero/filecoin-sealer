@@ -249,7 +249,7 @@ var LIBP2PONLY = []fx.Option{
 				}
 				j := ep.ComputeWinCount(curPower, mbi.NetworkPower)
 				ep.WinCount = j
-				log.Infof("wwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwww curPower %v NetworkPower %v count %d", curPower, mbi.NetworkPower, j)
+				log.Infof("wwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwww round %v curPower %v NetworkPower %v sectors %v count %d", round, curPower, mbi.NetworkPower, mbi.Sectors, ep.WinCount)
 				if ep.WinCount < 1 {
 					return
 				}
@@ -271,7 +271,12 @@ var LIBP2PONLY = []fx.Option{
 					log.Errorf("NsIDFromAddress miner %v error %v", mr, err)
 					return
 				}
-				wpostProof, err := util.GenerateWinningPoSt(ctx, util.NsActorID(actorID), mbi.Sectors, electionRand, string(path))
+				proofType, err := util.NsWinningPoStProofTypeFromWindowPoStProofType(255, util.NsRegisteredPoStProof(mbi.Sectors[0].SealProof))
+				if err != nil {
+					log.Error(xerrors.Errorf("determining winning post proof type: %v", err))
+					return
+				}
+				wpostProof, err := util.GenerateWinningPoSt(ctx, util.NsActorID(actorID), mbi.Sectors, electionRand, proofType, string(path))
 				if err != nil {
 					log.Errorf("GenerateWinningPoSt miner %v error %v", mr, err)
 					return
@@ -293,10 +298,15 @@ var LIBP2PONLY = []fx.Option{
 
 		blkChan := make(chan *util.NsBlockMsg, 5)
 		go func() {
+			curH := util.NsChainEpoch(0)
 			for {
 				select {
 				case b := <-blkChan:
 					cpb := b
+					if curH >= cpb.Header.Height {
+						continue
+					}
+					curH = cpb.Header.Height
 					go IsWinnerFunc(cpb.Header)
 				}
 			}

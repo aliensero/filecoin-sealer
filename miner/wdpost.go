@@ -166,7 +166,7 @@ func (m *Miner) ReFindPoStTable(actorID int64) ([]int64, error) {
 	db := m.Db
 	var taskInfos []util.DbTaskInfo
 	whr := "select a.actor_id,a.sector_num,b.worker_id,comm_r,cache_dir_path,sealed_sector_path,proof_type from db_task_infos as a left join (select actor_id,worker_id,sector_num from db_task_logs where id in (select max(id) from db_task_logs where state=2 and task_type='C1' group by sector_num,actor_id)) as b on a.actor_id=b.actor_id and a.sector_num=b.sector_num where a.actor_id= ? and a.task_type='PROVING';"
-	if err := m.Db.Debug().Raw(whr, actorID).Scan(&taskInfos).Error; err != nil {
+	if err := m.Db.Raw(whr, actorID).Scan(&taskInfos).Error; err != nil {
 		return []int64{}, err
 	}
 	tx := db.Begin()

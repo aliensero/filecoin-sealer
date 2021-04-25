@@ -32,6 +32,7 @@ require (
 	github.com/libp2p/go-libp2p-pubsub v0.4.2-0.20210212194758-6c1addf493eb
 	github.com/urfave/cli/v2 v2.3.0
 	go.uber.org/fx v1.13.1
+	golang.org/x/crypto v0.0.0-20200820211705-5c72a883971a
 	golang.org/x/exp v0.0.0-20210220032938-85be41e4509f // indirect
 	golang.org/x/xerrors v0.0.0-20200804184101-5ec99f83aff1
 )

@@ -36,6 +36,7 @@ import (
 	"github.com/filecoin-project/lotus/chain/gen"
 	"github.com/filecoin-project/lotus/chain/store"
 	"github.com/filecoin-project/lotus/chain/types"
+	"github.com/filecoin-project/lotus/cli"
 	"github.com/filecoin-project/lotus/lib/sigs"
 	_ "github.com/filecoin-project/lotus/lib/sigs/bls"
 	_ "github.com/filecoin-project/lotus/lib/sigs/secp"
@@ -109,6 +110,7 @@ var ParseFIL = types.ParseFIL
 var NsNewInt = types.NewInt
 var NsNewTipSet = types.NewTipSet
 var NsDecodeBlockMsg = types.DecodeBlockMsg
+var NsBigFromBytes = types.BigFromBytes
 
 type NsNetworkName = dtypes.NetworkName
 
@@ -175,6 +177,7 @@ type NsMinerPartition = miner.Partition
 
 var NsWithdrawBalance = miner.Methods.WithdrawBalance
 var NsMinerLoad = miner.Load
+var NsWinningPoStProofTypeFromWindowPoStProofType = miner.WinningPoStProofTypeFromWindowPoStProofType
 
 type NsMiningBase = lminer.MiningBase
 
@@ -228,6 +231,8 @@ var NsRoutedHost = lp2p.RoutedHost
 type NsSignFunc = gen.SignFunc
 
 var NsComputeVRF = gen.ComputeVRF
+
+var NsGetFullNodeAPI = cli.GetFullNodeAPI
 
 func NsSealPreCommitPhase1(nsProof NsRegisteredSealProof, cacheDirPath, stagedSectorPath, sealedSectorPath string, nsSectorNum NsSectorNum, nsActorID NsActorID, nsTicket NsSealRandomness, nsPieceInfo []NsPieceInfo) ([]byte, error) {
 
@@ -631,7 +636,7 @@ func TestGenerateCreateMinerSigMsg(ph string, sealProofType int64, nonce uint64,
 	fmt.Printf("msg cid %s\n", cid.String())
 }
 
-func GenerateWinningPoSt(ctx context.Context, actorID abi.ActorID, sectorInfo []proof2.SectorInfo, randomness abi.PoStRandomness, path string) ([]proof2.PoStProof, error) {
+func GenerateWinningPoSt(ctx context.Context, actorID abi.ActorID, sectorInfo []proof2.SectorInfo, randomness abi.PoStRandomness, postProofType abi.RegisteredPoStProof, path string) ([]proof2.PoStProof, error) {
 	randomness[31] &= 0x3f
 
 	out := make([]ffi.PrivateSectorInfo, 0, len(sectorInfo))
@@ -639,7 +644,7 @@ func GenerateWinningPoSt(ctx context.Context, actorID abi.ActorID, sectorInfo []
 		s := ss
 		out = append(out, ffi.PrivateSectorInfo{
 			CacheDirPath:     filepath.Join(path, "cache", fmt.Sprintf("s-t0%d-%d", actorID, s.SectorNumber)),
-			PoStProofType:    abi.RegisteredPoStProof(s.SealProof),
+			PoStProofType:    postProofType,
 			SealedSectorPath: filepath.Join(path, "sealed", fmt.Sprintf("s-t0%d-%d", actorID, s.SectorNumber)),
 			SectorInfo:       s,
 		})

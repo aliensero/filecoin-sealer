@@ -378,12 +378,12 @@ func (m *Miner) RecieveTaskResult(actorID int64, sectorNum int64, taskType strin
 				return err
 			}
 		} else if taskType == util.C2 {
-			if err := tx.Debug().Where(taskInfo).Model(taskInfo).Updates(map[string]interface{}{"task_type": util.NextTask[taskType], "state": util.INIT, "last_req_id": reqID, "proof": result}).Error; err != nil {
+			if err := tx.Where(taskInfo).Model(taskInfo).Updates(map[string]interface{}{"task_type": util.NextTask[taskType], "state": util.INIT, "last_req_id": reqID, "proof": result}).Error; err != nil {
 				tx.Rollback()
 				return err
 			}
 		} else {
-			if err := tx.Debug().Where(taskInfo).Model(taskInfo).Updates(map[string]interface{}{"task_type": util.NextTask[taskType], "state": util.INIT, "last_req_id": reqID}).Error; err != nil {
+			if err := tx.Where(taskInfo).Model(taskInfo).Updates(map[string]interface{}{"task_type": util.NextTask[taskType], "state": util.INIT, "last_req_id": reqID}).Error; err != nil {
 				tx.Rollback()
 				return err
 			}

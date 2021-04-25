@@ -2,6 +2,7 @@ package util
 
 import (
 	"fmt"
+	"os"
 	"time"
 
 	"github.com/jinzhu/gorm"
@@ -201,6 +202,9 @@ func InitMysql(user, passwd, ip, port, database string) (*gorm.DB, error) {
 		sqlDB.SetConnMaxLifetime(time.Minute)
 		db.Set("gorm:table_options", "ENGINE=InnoDB").AutoMigrate(&DbTaskLog{}, &DbTaskInfo{}, &DbTaskFailed{}, &DbAddressInfo{}, &DbWorkerLogin{}, &DbPostInfo{})
 		// w.db.Model(&DbWorkerRegister{}).AddIndex("idx_host_name", "host_name")
+	}
+	if _, ok := os.LookupEnv("MYSQLDEBUG"); ok {
+		db = db.Debug()
 	}
 	return db, err
 }

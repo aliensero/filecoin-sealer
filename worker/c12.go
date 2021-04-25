@@ -75,7 +75,7 @@ func (w *Worker) sealCommitPhase1(
 
 	closeBeat := taskHeartBeat(timebeat, 30*time.Second)
 
-	var minerAPIErr, err error
+	var err error
 	var phase1Output []byte
 
 	go func() {
@@ -128,7 +128,7 @@ func (w *Worker) sealCommitPhase1(
 
 		phase1Output, err = util.NsSealCommitPhase1(proofType, sealedCID, unsealedCID, taskInfo.CacheDirPath, taskInfo.SealedSectorPath, util.NsSectorNum(*taskInfo.SectorNum), util.NsActorID(*taskInfo.ActorID), util.NsSealRandomness(ticketBytes[:]), util.NsSeed(seedBytes[:]), pieces)
 		if err != nil {
-			minerAPIErr = w.MinerApi.RecieveTaskResult(*taskInfo.ActorID, *taskInfo.SectorNum, taskInfo.TaskType, session, true, []byte(err.Error()))
+			w.MinerApi.RecieveTaskResult(*taskInfo.ActorID, *taskInfo.SectorNum, taskInfo.TaskType, session, true, []byte(err.Error()))
 			return
 		}
 		if err == nil {

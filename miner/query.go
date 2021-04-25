@@ -7,7 +7,7 @@ import (
 
 func (m *Miner) QueryOnly(taskInfo util.DbTaskInfo) ([]util.DbTaskInfo, error) {
 	var taskInfoRet []util.DbTaskInfo
-	err := m.Db.Debug().Where(taskInfo).Find(&taskInfoRet).Error
+	err := m.Db.Where(taskInfo).Find(&taskInfoRet).Error
 	return taskInfoRet, err
 }
 
@@ -57,20 +57,20 @@ func (m *Miner) QueryTask(reqInfo util.RequestInfo) (util.DbTaskInfo, error) {
 	tx := m.Db.Begin()
 	if sectorNum == -1 {
 		if taskType == util.PC2 || taskType == util.C1 {
-			err := tx.Debug().Where("actor_id = ? and task_type = ? and state = ? and worker_id = ?", actorID, taskType, util.INIT, workerID).First(&taskInfo).Error
+			err := tx.Where("actor_id = ? and task_type = ? and state = ? and worker_id = ?", actorID, taskType, util.INIT, workerID).First(&taskInfo).Error
 			if err != nil {
 				tx.Rollback()
 				return util.DbTaskInfo{}, err
 			}
 		} else {
-			err := tx.Debug().Where("actor_id = ? and task_type = ? and state = ?", actorID, taskType, util.INIT).First(&taskInfo).Error
+			err := tx.Where("actor_id = ? and task_type = ? and state = ?", actorID, taskType, util.INIT).First(&taskInfo).Error
 			if err != nil {
 				tx.Rollback()
 				return util.DbTaskInfo{}, err
 			}
 		}
 	} else {
-		err := tx.Debug().Where("actor_id = ? and sector_num = ?", actorID, sectorNum).First(&taskInfo).Error
+		err := tx.Where("actor_id = ? and sector_num = ?", actorID, sectorNum).First(&taskInfo).Error
 		if err != nil {
 			tx.Rollback()
 			return util.DbTaskInfo{}, err
@@ -97,7 +97,7 @@ func (m *Miner) QueryTask(reqInfo util.RequestInfo) (util.DbTaskInfo, error) {
 		ReqID:        reqID,
 		State:        util.RUNING,
 	}
-	if err := tx.Debug().Create(&taskLog).Error; err != nil {
+	if err := tx.Create(&taskLog).Error; err != nil {
 		tx.Rollback()
 		return util.DbTaskInfo{}, err
 	}
@@ -169,12 +169,12 @@ func (m *Miner) RetryTask(reqInfo util.RequestInfo) (util.DbTaskInfo, error) {
 	tx := m.Db.Begin()
 
 	if taskType == util.PC1 || taskType == util.PC2 || taskType == util.C1 {
-		if err := tx.Debug().Where("actor_id = ? and sector_num = ? and worker_id = ?", actorID, sectorNum, workerID).Model(taskInfo).Updates(taskInfo).First(&taskInfo).Error; err != nil {
+		if err := tx.Where("actor_id = ? and sector_num = ? and worker_id = ?", actorID, sectorNum, workerID).Model(taskInfo).Updates(taskInfo).First(&taskInfo).Error; err != nil {
 			tx.Rollback()
 			return util.DbTaskInfo{}, err
 		}
 	} else {
-		if err := tx.Debug().Where("actor_id = ? and sector_num = ?", actorID, sectorNum).Model(taskInfo).Updates(taskInfo).First(&taskInfo).Error; err != nil {
+		if err := tx.Where("actor_id = ? and sector_num = ?", actorID, sectorNum).Model(taskInfo).Updates(taskInfo).First(&taskInfo).Error; err != nil {
 			tx.Rollback()
 			return util.DbTaskInfo{}, err
 		}
@@ -202,6 +202,6 @@ func (m *Miner) QueryToPoSt(reqInfo util.RequestInfo) ([]util.DbPostInfo, error)
 	workerID := reqInfo.WorkerID
 	sectors := reqInfo.Sectors
 	var postInfo []util.DbPostInfo
-	err := m.Db.Debug().Where("actor_id = ? and worker_id = ? and state = ? and sector_num in ("+sectors+")", actorID, workerID, util.SUCCESS).Find(&postInfo).Error
+	err := m.Db.Where("actor_id = ? and worker_id = ? and state = ? and sector_num in ("+sectors+")", actorID, workerID, util.SUCCESS).Find(&postInfo).Error
 	return postInfo, err
 }
