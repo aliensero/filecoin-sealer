@@ -42,10 +42,10 @@ func (m *Miner) QueryMinerPoStInfo(actorID int64) (util.MinerPoStInfo, error) {
 	key := ts.Key()
 	rand, err := m.LotusApi.ChainGetRandomnessFromBeacon(context.TODO(), key, util.NsDomainSeparationTag_WindowedPoStChallengeSeed, di.Challenge, buf.Bytes())
 	if err != nil {
-		log.Errorf("WinPoStServer SearchPartitions actorID %v ChainGetRandomnessFromBeacon error %v", actorID, err)
+		log.Errorf("WinPoStServer SearchPartitions actorID %v height %v di.Challenge %d ChainGetRandomnessFromBeacon error %v", actorID, ts.Height(), di.Challenge, err)
 		return util.MinerPoStInfo{}, err
 	}
-	return util.MinerPoStInfo{*di, partitions, util.NsPoStRandomness(rand)}, nil
+	return util.MinerPoStInfo{Di: *di, Partitions: partitions, Rand: util.NsPoStRandomness(rand)}, nil
 }
 
 func (m *Miner) CheckRecoveries(actorID int64, addrInfo string, addrType string, dlIdx uint64) (string, error) {

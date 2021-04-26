@@ -122,7 +122,7 @@ func (m *Miner) MinerInfo(actorID uint64) (string, error) {
 		faultPerc = float64(faults*10000/proving) / 100
 	}
 
-	ret := fmt.Sprintf("Balance: %s; Current Epoch: %d; Proving Period Boundary: %d; Faults: %d (%.2f%%); Recovering: %d; Deadline Index: %d; Deadline Sectors: %d", balance, cd.CurrentEpoch, cd.PeriodStart%cd.WPoStProvingPeriod, faults, faultPerc, recovering, cd.Index, curDeadlineSectors)
+	ret := fmt.Sprintf("Balance: %s; Current Epoch: %d;Challenge Epoch: %d; Proving Period Boundary: %d; Faults: %d (%.2f%%); Recovering: %d; Deadline Index: %d; Deadline Sectors: %d", balance, cd.CurrentEpoch, cd.Challenge, cd.PeriodStart%cd.WPoStProvingPeriod, faults, faultPerc, recovering, cd.Index, curDeadlineSectors)
 
 	fmt.Printf("Current Epoch:           %d\n", cd.CurrentEpoch)
 

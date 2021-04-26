@@ -18,6 +18,12 @@ import (
 	"golang.org/x/xerrors"
 )
 
+var set map[interface{}]interface{}
+
+func init() {
+	set = make(map[interface{}]interface{})
+}
+
 type P2PHostIn struct {
 	fx.In
 
@@ -189,113 +195,6 @@ var LIBP2PONLY = []fx.Option{
 			return err
 		}
 
-		var IsWinnerFunc = func(blkh *util.NsBlockHeader) {
-			tps, err := util.NsNewTipSet([]*util.NsBlockHeader{blkh})
-			if err != nil {
-				log.Errorf("NewTipSet error %v", err)
-				return
-			}
-			round := tps.Height() + util.NsChainEpoch(1)
-			curTipset, err := fa.ChainHead(ctx)
-			if err != nil {
-				log.Errorf("ChainGetTipSeterror %v", err)
-				return
-			}
-			mbi, err := fa.MinerGetBaseInfo(ctx, mr, round, curTipset.Key())
-			if err != nil || mbi == nil {
-				log.Errorf("get miner info mbi == nil %v error %v", mbi == nil, err)
-				return
-			}
-			beaconPrev := mbi.PrevBeaconEntry
-			bvals := mbi.BeaconEntries
-			rbase := beaconPrev
-			if len(bvals) > 0 {
-				rbase = bvals[len(bvals)-1]
-			}
-
-			buf := new(bytes.Buffer)
-			if err := mr.MarshalCBOR(buf); err != nil {
-				log.Error(xerrors.Errorf("failed to cbor marshal address: %w", err))
-				return
-			}
-
-			electionRand, err := util.NsDrawRandomness(rbase.Data, util.NsDomainSeparationTag_ElectionProofProduction, round, buf.Bytes())
-			if err != nil {
-				log.Error(xerrors.Errorf("failed to draw randomness: %w", err))
-				return
-			}
-			log.Infof("blk cid %v worker key %v electionRand %v NetworkPower %v", blkh.Cid(), mbi.WorkerKey, electionRand, mbi.NetworkPower)
-			if prihex != "" {
-				vrfout, err := util.NsComputeVRF(ctx, func(ctx context.Context, addr util.NsAddress, data []byte) (*util.NsSignature, error) {
-					ki, err := util.GenerateKeyByHexString(string(prihex))
-					if err != nil {
-						return nil, err
-					}
-					sigture, err := util.SignMsg(ki.NsKeyInfo, electionRand)
-					if err != nil {
-						return nil, err
-					}
-					return sigture, nil
-				}, mbi.WorkerKey, electionRand)
-				if err != nil {
-					log.Error(xerrors.Errorf("failed to compute VRF: %w", err))
-					return
-				}
-
-				ep := &util.NsElectionProof{VRFProof: vrfout}
-				curPower := mbi.MinerPower
-				if testPower != 0 {
-					curPower = util.NsNewInt(uint64(testPower))
-				}
-				j := ep.ComputeWinCount(curPower, mbi.NetworkPower)
-				ep.WinCount = j
-				log.Infof("wwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwww round %v curPower %v NetworkPower %v sectors %v count %d", round, curPower, mbi.NetworkPower, mbi.Sectors, ep.WinCount)
-				if ep.WinCount < 1 {
-					return
-				}
-
-				ticket := util.NsTicket{
-					VRFProof: vrfout,
-				}
-
-				msgs, err := fa.MpoolSelect(ctx, curTipset.Key(), ticket.Quality())
-				if len(msgs) > 0 {
-					log.Infof("select msgs %v error %v", msgs[0], err)
-				}
-				if err != nil {
-					log.Errorf("select msgs error %v", err)
-					return
-				}
-				actorID, err := util.NsIDFromAddress(mr)
-				if err != nil {
-					log.Errorf("NsIDFromAddress miner %v error %v", mr, err)
-					return
-				}
-				proofType, err := util.NsWinningPoStProofTypeFromWindowPoStProofType(255, util.NsRegisteredPoStProof(mbi.Sectors[0].SealProof))
-				if err != nil {
-					log.Error(xerrors.Errorf("determining winning post proof type: %v", err))
-					return
-				}
-				wpostProof, err := util.GenerateWinningPoSt(ctx, util.NsActorID(actorID), mbi.Sectors, electionRand, proofType, string(path))
-				if err != nil {
-					log.Errorf("GenerateWinningPoSt miner %v error %v", mr, err)
-					return
-				}
-				uts := curTipset.MinTimestamp() + util.NsBlockDelaySecs
-				fa.MinerCreateBlock(ctx, &util.NsBlockTemplate{
-					Miner:            mr,
-					Parents:          curTipset.Key(),
-					Ticket:           &ticket,
-					Eproof:           ep,
-					BeaconValues:     bvals,
-					Messages:         msgs,
-					Epoch:            round,
-					Timestamp:        uts,
-					WinningPoStProof: wpostProof,
-				})
-			}
-		}
-
 		blkChan := make(chan *util.NsBlockMsg, 5)
 		go func() {
 			curH := util.NsChainEpoch(0)
@@ -307,7 +206,7 @@ var LIBP2PONLY = []fx.Option{
 						continue
 					}
 					curH = cpb.Header.Height
-					go IsWinnerFunc(cpb.Header)
+					go MinerCreateBlock(ctx, cpb.Header, fa, mr, string(prihex), uint64(testPower), string(path))
 				}
 			}
 		}()
@@ -369,3 +268,110 @@ type AddrStr string
 type PriHex string
 type Power uint64
 type SealedPath string
+
+func MinerCreateBlock(ctx context.Context, blkh *util.NsBlockHeader, fa util.LotusAPI, mr util.NsAddress, prihex string, testPower uint64, sealedPath string) {
+	tps, err := util.NsNewTipSet([]*util.NsBlockHeader{blkh})
+	if err != nil {
+		log.Errorf("NewTipSet error %v", err)
+		return
+	}
+	round := tps.Height() + util.NsChainEpoch(1)
+	curTipset, err := fa.ChainHead(ctx)
+	if err != nil {
+		log.Errorf("ChainGetTipSeterror %v", err)
+		return
+	}
+	mbi, err := fa.MinerGetBaseInfo(ctx, mr, round, curTipset.Key())
+	if err != nil || mbi == nil {
+		log.Errorf("get miner info mbi == nil %v error %v", mbi == nil, err)
+		return
+	}
+	beaconPrev := mbi.PrevBeaconEntry
+	bvals := mbi.BeaconEntries
+	rbase := beaconPrev
+	if len(bvals) > 0 {
+		rbase = bvals[len(bvals)-1]
+	}
+
+	buf := new(bytes.Buffer)
+	if err := mr.MarshalCBOR(buf); err != nil {
+		log.Error(xerrors.Errorf("failed to cbor marshal address: %w", err))
+		return
+	}
+
+	electionRand, err := util.NsDrawRandomness(rbase.Data, util.NsDomainSeparationTag_ElectionProofProduction, round, buf.Bytes())
+	if err != nil {
+		log.Error(xerrors.Errorf("failed to draw randomness: %w", err))
+		return
+	}
+	log.Infof("blk cid %v worker key %v electionRand %v NetworkPower %v", blkh.Cid(), mbi.WorkerKey, electionRand, mbi.NetworkPower)
+	if prihex != "" {
+		vrfout, err := util.NsComputeVRF(ctx, func(ctx context.Context, addr util.NsAddress, data []byte) (*util.NsSignature, error) {
+			ki, err := util.GenerateKeyByHexString(string(prihex))
+			if err != nil {
+				return nil, err
+			}
+			sigture, err := util.SignMsg(ki.NsKeyInfo, electionRand)
+			if err != nil {
+				return nil, err
+			}
+			return sigture, nil
+		}, mbi.WorkerKey, electionRand)
+		if err != nil {
+			log.Error(xerrors.Errorf("failed to compute VRF: %w", err))
+			return
+		}
+
+		ep := &util.NsElectionProof{VRFProof: vrfout}
+		curPower := mbi.MinerPower
+		if testPower != 0 {
+			curPower = util.NsNewInt(uint64(testPower))
+		}
+		j := ep.ComputeWinCount(curPower, mbi.NetworkPower)
+		ep.WinCount = j
+		log.Infof("wwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwww round %v curPower %v NetworkPower %v sectors %v count %d", round, curPower, mbi.NetworkPower, mbi.Sectors, ep.WinCount)
+		if ep.WinCount < 1 {
+			return
+		}
+
+		ticket := util.NsTicket{
+			VRFProof: vrfout,
+		}
+
+		msgs, err := fa.MpoolSelect(ctx, curTipset.Key(), ticket.Quality())
+		if len(msgs) > 0 {
+			log.Infof("select msgs %v error %v", msgs[0], err)
+		}
+		if err != nil {
+			log.Errorf("select msgs error %v", err)
+			return
+		}
+		actorID, err := util.NsIDFromAddress(mr)
+		if err != nil {
+			log.Errorf("NsIDFromAddress miner %v error %v", mr, err)
+			return
+		}
+		proofType, err := util.NsWinningPoStProofTypeFromWindowPoStProofType(255, util.NsRegisteredPoStProof(mbi.Sectors[0].SealProof))
+		if err != nil {
+			log.Error(xerrors.Errorf("determining winning post proof type: %v", err))
+			return
+		}
+		wpostProof, err := util.GenerateWinningPoSt(ctx, util.NsActorID(actorID), mbi.Sectors, electionRand, proofType, sealedPath)
+		if err != nil {
+			log.Errorf("GenerateWinningPoSt miner %v error %v", mr, err)
+			return
+		}
+		uts := curTipset.MinTimestamp() + util.NsBlockDelaySecs
+		fa.MinerCreateBlock(ctx, &util.NsBlockTemplate{
+			Miner:            mr,
+			Parents:          curTipset.Key(),
+			Ticket:           &ticket,
+			Eproof:           ep,
+			BeaconValues:     bvals,
+			Messages:         msgs,
+			Epoch:            round,
+			Timestamp:        uts,
+			WinningPoStProof: wpostProof,
+		})
+	}
+}
