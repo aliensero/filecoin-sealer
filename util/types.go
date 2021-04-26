@@ -105,6 +105,7 @@ type NsBlockMsg = types.BlockMsg
 type NsElectionProof = types.ElectionProof
 type NsBeaconEntry = types.BeaconEntry
 type NsTicket = types.Ticket
+type NsFullBlock = types.FullBlock
 
 var ParseFIL = types.ParseFIL
 var NsNewInt = types.NewInt
@@ -128,6 +129,8 @@ var NsMarketAddr = builtin2.StorageMarketActorAddr
 type NsDomainSeparationTag = crypto.DomainSeparationTag
 type NsSigType = crypto.SigType
 type NsSignature = crypto.Signature
+
+var NsSigTypeBLS = crypto.SigTypeBLS
 
 var NsDomainSeparationTag_ElectionProofProduction = crypto.DomainSeparationTag_ElectionProofProduction
 var NsDomainSeparationTag_TicketProduction = crypto.DomainSeparationTag_TicketProduction
