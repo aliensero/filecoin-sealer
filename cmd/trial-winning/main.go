@@ -110,7 +110,7 @@ func trialWinning(ctx context.Context, miner string, height util.NsChainEpoch, a
 		return err
 	}
 	round := util.NsChainEpoch(height)
-	tps, err := api.ChainGetTipSetByHeight(ctx, round, util.NsTipSetKey{})
+	tps, err := api.ChainGetTipSetByHeight(ctx, round-1, util.NsTipSetKey{})
 	if err != nil {
 		return err
 	}
@@ -121,8 +121,12 @@ func trialWinning(ctx context.Context, miner string, height util.NsChainEpoch, a
 	if mbi == nil {
 		return xerrors.Errorf("failed to get mining base info: %w", err)
 	}
+	beaconPrev := mbi.PrevBeaconEntry
+	if len(mbi.BeaconEntries) > 0 {
+		beaconPrev = mbi.BeaconEntries[len(mbi.BeaconEntries)-1]
+	}
 
-	ret, err := IsRoundWinner(ctx, tps, round, addr, mbi.PrevBeaconEntry, mbi, prihex)
+	ret, err := IsRoundWinner(ctx, tps, round, addr, beaconPrev, mbi, prihex)
 	if err != nil {
 		return err
 	}

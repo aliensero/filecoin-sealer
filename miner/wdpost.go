@@ -34,7 +34,7 @@ func (m *Miner) QueryMinerPoStInfo(actorID int64) (util.MinerPoStInfo, error) {
 		return util.MinerPoStInfo{}, err
 	}
 
-	ts, err := m.LotusApi.ChainGetTipSetByHeight(context.TODO(), di.Challenge, util.NsTipSetKey{})
+	ts, err := m.LotusApi.ChainHead(context.TODO())
 	if err != nil {
 		log.Error(xerrors.Errorf("WinPoStServer failed ChainGetTipSetByHeight: %w", err))
 		return util.MinerPoStInfo{}, err
