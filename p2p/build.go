@@ -405,22 +405,35 @@ func getTicketAndElectionProof(ctx context.Context, mbi *util.NsMiningBaseInfo, 
 func publishBlockMsg(ctx context.Context, curTipset *util.NsTipSet, fa util.LotusAPI, blkHead *util.NsBlockHeader, msgs []*util.NsSignedMessage, ki *util.Key, pub *pubsub.PubSub, topic string) error {
 	var blk util.NsBlockMsg
 	var blsSigs []util.NsSignature
+
+	blockstore := util.NsNewMemory()
+	bs := util.NsNewCborStore(blockstore)
+	var blkcids []util.NsCid
+	var secpkcids []util.NsCid
 	for _, msg := range msgs {
 		if msg.Signature.Type == util.NsSigTypeBLS {
 			blsSigs = append(blsSigs, msg.Signature)
 			blk.BlsMessages = append(blk.BlsMessages, msg.Cid())
+			cid, err := bs.Put(ctx, msg.Message)
+			if err != nil {
+				return xerrors.Errorf("publishBlockMsg blockstore error %v", err)
+			}
+			blkcids = append(blkcids, cid)
 		} else {
 			blk.SecpkMessages = append(blk.SecpkMessages, msg.Cid())
+			cid, err := bs.Put(ctx, msg)
+			if err != nil {
+				return xerrors.Errorf("publishBlockMsg blockstore error %v", err)
+			}
+			secpkcids = append(secpkcids, cid)
 		}
 	}
 
-	blsmsgroot, err := util.BuildCid(ctx, blk.BlsMessages)
-	secpkmsgroot, err := util.BuildCid(ctx, blk.SecpkMessages)
-	msgMeta := util.NsMsgMeta{
-		BlsMessages:   blsmsgroot,
-		SecpkMessages: secpkmsgroot,
+	blsmsgroot, err := util.NsComputeMsgMeta(bs, blkcids, secpkcids)
+	if err != nil {
+		return xerrors.Errorf("publishBlockMsg NsComputeMsgMeta error %v", err)
 	}
-	blkHead.Messages = msgMeta.Cid()
+	blkHead.Messages = blsmsgroot
 
 	parentWeight, err := fa.ChainTipSetWeight(ctx, curTipset.Key())
 	if err != nil {
@@ -460,6 +473,7 @@ func publishBlockMsg(ctx context.Context, curTipset *util.NsTipSet, fa util.Lotu
 	if err != nil {
 		return err
 	}
+	log.Infof("publishBlockMsg cid %v", blsmsgroot)
 	return nil
 }
 

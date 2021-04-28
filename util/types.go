@@ -49,6 +49,7 @@ import (
 
 	"github.com/filecoin-project/lotus/node/modules/dtypes"
 	"github.com/filecoin-project/lotus/node/modules/lp2p"
+	blockadt "github.com/filecoin-project/specs-actors/actors/util/adt"
 	builtin2 "github.com/filecoin-project/specs-actors/v2/actors/builtin"
 	miner2 "github.com/filecoin-project/specs-actors/v2/actors/builtin/miner"
 	power2 "github.com/filecoin-project/specs-actors/v2/actors/builtin/power"
@@ -197,6 +198,7 @@ type NsMiningBaseInfo = api.MiningBaseInfo
 type NsBlockTemplate = api.BlockTemplate
 
 var NsNewAPIBlockstore = blockstore.NewAPIBlockstore
+var NsNewMemory = blockstore.NewMemory
 
 var NsCurrentNetwork = address.CurrentNetwork
 var NsMainNet = address.Mainnet
@@ -242,6 +244,8 @@ type NsSignFunc = gen.SignFunc
 var NsComputeVRF = gen.ComputeVRF
 
 var NsGetFullNodeAPI = cli.GetFullNodeAPI
+
+var NsNewCborStore = cbor.NewCborStore
 
 func NsSealPreCommitPhase1(nsProof NsRegisteredSealProof, cacheDirPath, stagedSectorPath, sealedSectorPath string, nsSectorNum NsSectorNum, nsActorID NsActorID, nsTicket NsSealRandomness, nsPieceInfo []NsPieceInfo) ([]byte, error) {
 
@@ -696,35 +700,36 @@ func NsComputeBaseFee(ctx context.Context, fa api.FullNode, ts *types.TipSet) (a
 		return abi.NewTokenAmount(100), nil
 	}
 
-	zero := abi.NewTokenAmount(0)
+	// zero := abi.NewTokenAmount(0)
 
 	// totalLimit is sum of GasLimits of unique messages in a tipset
-	totalLimit := int64(0)
+	// totalLimit := int64(0)
 
-	seen := make(map[cid.Cid]struct{})
+	// seen := make(map[cid.Cid]struct{})
 
-	for _, b := range ts.Blocks() {
-		blkmsg, err := fa.ChainGetBlockMessages(ctx, b.Messages)
-		if err != nil {
-			return zero, xerrors.Errorf("error getting messages for: %s: %w", b.Cid(), err)
-		}
-		msg1 := blkmsg.BlsMessages
-		msg2 := blkmsg.SecpkMessages
-		for _, m := range msg1 {
-			c := m.Cid()
-			if _, ok := seen[c]; !ok {
-				totalLimit += m.GasLimit
-				seen[c] = struct{}{}
-			}
-		}
-		for _, m := range msg2 {
-			c := m.Cid()
-			if _, ok := seen[c]; !ok {
-				totalLimit += m.Message.GasLimit
-				seen[c] = struct{}{}
-			}
-		}
-	}
+	// for _, b := range ts.Blocks() {
+	// 	blkmsg, err := fa.ChainGetBlockMessages(ctx, b.Messages)
+	// 	if err != nil {
+	// 		return zero, xerrors.Errorf("getting messages for: %s: %w", b.Cid(), err)
+	// 	}
+	// 	msg1 := blkmsg.BlsMessages
+	// 	msg2 := blkmsg.SecpkMessages
+	// 	for _, m := range msg1 {
+	// 		c := m.Cid()
+	// 		if _, ok := seen[c]; !ok {
+	// 			totalLimit += m.GasLimit
+	// 			seen[c] = struct{}{}
+	// 		}
+	// 	}
+	// 	for _, m := range msg2 {
+	// 		c := m.Cid()
+	// 		if _, ok := seen[c]; !ok {
+	// 			totalLimit += m.Message.GasLimit
+	// 			seen[c] = struct{}{}
+	// 		}
+	// 	}
+	// }
+	var totalLimit int64 = 999999999999999999
 	parentBaseFee := ts.Blocks()[0].ParentBaseFee
 
 	return store.ComputeNextBaseFee(parentBaseFee, totalLimit, len(ts.Blocks()), ts.Height()), nil
@@ -790,4 +795,46 @@ func BuildCid(ctx context.Context, v interface{}) (cid.Cid, error) {
 	}
 
 	return ndCid, nil
+}
+
+func NsComputeMsgMeta(bs cbor.IpldStore, bmsgCids, smsgCids []cid.Cid) (cid.Cid, error) {
+	// block headers use adt0
+
+	store := blockadt.WrapStore(context.TODO(), bs)
+	bmArr := blockadt.MakeEmptyArray(store)
+	smArr := blockadt.MakeEmptyArray(store)
+
+	for i, m := range bmsgCids {
+		c := cbg.CborCid(m)
+		if err := bmArr.Set(uint64(i), &c); err != nil {
+			return cid.Undef, err
+		}
+	}
+
+	for i, m := range smsgCids {
+		c := cbg.CborCid(m)
+		if err := smArr.Set(uint64(i), &c); err != nil {
+			return cid.Undef, err
+		}
+	}
+
+	bmroot, err := bmArr.Root()
+	if err != nil {
+		return cid.Undef, err
+	}
+
+	smroot, err := smArr.Root()
+	if err != nil {
+		return cid.Undef, err
+	}
+
+	mrcid, err := store.Put(store.Context(), &types.MsgMeta{
+		BlsMessages:   bmroot,
+		SecpkMessages: smroot,
+	})
+	if err != nil {
+		return cid.Undef, xerrors.Errorf("failed to put msgmeta: %w", err)
+	}
+
+	return mrcid, nil
 }
