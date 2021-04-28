@@ -36,11 +36,6 @@ var SubCmd = &cli.Command{
 			Name:  "prihex",
 			Usage: "private key hex",
 		},
-		&cli.Uint64Flag{
-			Name:  "testpower",
-			Usage: "test miner power",
-			Value: 10995116277760, // 10TiB
-		},
 		&cli.StringFlag{
 			Name:  "sealedpath",
 			Value: "/root/miner_storage",
@@ -54,7 +49,6 @@ var SubCmd = &cli.Command{
 		opts = append(opts, Override(new(util.LotusApiStr), util.LotusApiStr(cctx.String("lotusapi"))))
 		opts = append(opts, Override(new(AddrStr), AddrStr(cctx.String("actor"))))
 		opts = append(opts, Override(new(PriHex), PriHex(cctx.String("prihex"))))
-		opts = append(opts, Override(new(Power), Power(cctx.Uint64("testpower"))))
 		opts = append(opts, Override(new(SealedPath), SealedPath(cctx.String("sealedpath"))))
 		stopFunc, err := NewNoDefault(ctx, opts...)
 		if err != nil {

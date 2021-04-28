@@ -1,6 +1,7 @@
 package util
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"encoding/hex"
@@ -51,6 +52,10 @@ import (
 	builtin2 "github.com/filecoin-project/specs-actors/v2/actors/builtin"
 	miner2 "github.com/filecoin-project/specs-actors/v2/actors/builtin/miner"
 	power2 "github.com/filecoin-project/specs-actors/v2/actors/builtin/power"
+	block "github.com/ipfs/go-block-format"
+	cbor "github.com/ipfs/go-ipld-cbor"
+	mh "github.com/multiformats/go-multihash"
+	cbg "github.com/whyrusleeping/cbor-gen"
 )
 
 var NsSealProofType_512MiB = 7
@@ -106,6 +111,7 @@ type NsElectionProof = types.ElectionProof
 type NsBeaconEntry = types.BeaconEntry
 type NsTicket = types.Ticket
 type NsFullBlock = types.FullBlock
+type NsMsgMeta = types.MsgMeta
 
 var ParseFIL = types.ParseFIL
 var NsNewInt = types.NewInt
@@ -656,4 +662,132 @@ func GenerateWinningPoSt(ctx context.Context, actorID abi.ActorID, sectorInfo []
 	privsectors := ffi.NewSortedPrivateSectorInfo(out...)
 
 	return ffi.GenerateWinningPoSt(actorID, privsectors, randomness)
+}
+
+func NsaggregateSignatures(sigs []crypto.Signature) (*crypto.Signature, error) {
+	sigsS := make([]ffi.Signature, len(sigs))
+	for i := 0; i < len(sigs); i++ {
+		copy(sigsS[i][:], sigs[i].Data[:ffi.SignatureBytes])
+	}
+
+	aggSig := ffi.Aggregate(sigsS)
+	if aggSig == nil {
+		if len(sigs) > 0 {
+			return nil, xerrors.Errorf("bls.Aggregate returned nil with %d signatures", len(sigs))
+		}
+
+		zeroSig := ffi.CreateZeroSignature()
+
+		// Note: for blst this condition should not happen - nil should not
+		// be returned
+		return &crypto.Signature{
+			Type: crypto.SigTypeBLS,
+			Data: zeroSig[:],
+		}, nil
+	}
+	return &crypto.Signature{
+		Type: crypto.SigTypeBLS,
+		Data: aggSig[:],
+	}, nil
+}
+
+func NsComputeBaseFee(ctx context.Context, fa api.FullNode, ts *types.TipSet) (abi.TokenAmount, error) {
+	if build.UpgradeBreezeHeight >= 0 && ts.Height() > build.UpgradeBreezeHeight && ts.Height() < build.UpgradeBreezeHeight+build.BreezeGasTampingDuration {
+		return abi.NewTokenAmount(100), nil
+	}
+
+	zero := abi.NewTokenAmount(0)
+
+	// totalLimit is sum of GasLimits of unique messages in a tipset
+	totalLimit := int64(0)
+
+	seen := make(map[cid.Cid]struct{})
+
+	for _, b := range ts.Blocks() {
+		blkmsg, err := fa.ChainGetBlockMessages(ctx, b.Messages)
+		if err != nil {
+			return zero, xerrors.Errorf("error getting messages for: %s: %w", b.Cid(), err)
+		}
+		msg1 := blkmsg.BlsMessages
+		msg2 := blkmsg.SecpkMessages
+		for _, m := range msg1 {
+			c := m.Cid()
+			if _, ok := seen[c]; !ok {
+				totalLimit += m.GasLimit
+				seen[c] = struct{}{}
+			}
+		}
+		for _, m := range msg2 {
+			c := m.Cid()
+			if _, ok := seen[c]; !ok {
+				totalLimit += m.Message.GasLimit
+				seen[c] = struct{}{}
+			}
+		}
+	}
+	parentBaseFee := ts.Blocks()[0].ParentBaseFee
+
+	return store.ComputeNextBaseFee(parentBaseFee, totalLimit, len(ts.Blocks()), ts.Height()), nil
+}
+
+type cidProvider interface {
+	Cid() cid.Cid
+}
+
+func BuildCid(ctx context.Context, v interface{}) (cid.Cid, error) {
+	mhType := uint64(mh.BLAKE2B_MIN + 31)
+	mhLen := -1
+	codec := uint64(cid.DagCBOR)
+
+	var expCid cid.Cid
+	if c, ok := v.(cidProvider); ok {
+		expCid := c.Cid()
+		pref := expCid.Prefix()
+		mhType = pref.MhType
+		mhLen = pref.MhLength
+		codec = pref.Codec
+	}
+
+	cm, ok := v.(cbg.CBORMarshaler)
+	if ok {
+		buf := new(bytes.Buffer)
+		if err := cm.MarshalCBOR(buf); err != nil {
+			return cid.Undef, cbor.NewSerializationError(err)
+		}
+
+		pref := cid.Prefix{
+			Codec:    codec,
+			MhType:   mhType,
+			MhLength: mhLen,
+			Version:  1,
+		}
+		c, err := pref.Sum(buf.Bytes())
+		if err != nil {
+			return cid.Undef, err
+		}
+
+		blk, err := block.NewBlockWithCid(buf.Bytes(), c)
+		if err != nil {
+			return cid.Undef, err
+		}
+
+		blkCid := blk.Cid()
+		if expCid != cid.Undef && blkCid != expCid {
+			return cid.Undef, fmt.Errorf("your object is not being serialized the way it expects to")
+		}
+
+		return blkCid, nil
+	}
+
+	nd, err := cbor.WrapObject(v, mhType, mhLen)
+	if err != nil {
+		return cid.Undef, err
+	}
+
+	ndCid := nd.Cid()
+	if expCid != cid.Undef && ndCid != expCid {
+		return cid.Undef, fmt.Errorf("your object is not being serialized the way it expects to")
+	}
+
+	return ndCid, nil
 }
