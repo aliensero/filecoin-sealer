@@ -20,7 +20,7 @@ import (
 
 func main() {
 
-	miner, err := address.NewFromString("f0423329") //矿工编号
+	miner, err := address.NewFromString("f0127595") //矿工编号
 	if err != nil {
 		fmt.Println(xerrors.Errorf("failed to miner: %w", err))
 	}
@@ -30,8 +30,11 @@ func main() {
 		fmt.Println(xerrors.Errorf("failed to cbor marshal address: %w", err))
 	}
 
-	curHight := 661231 //当前高度
-	for j := 20; j <= 20; j += 10 {
+	curHight := 732675 //当前高度
+	total := 5
+	t := types.NewInt(uint64(total) << 60) //EiB
+	inter := types.NewInt(28 << 50)
+	for j := 10; j <= 10; j += 10 {
 		for i := 1; i < 1036800; i++ { //高度一年1036800 一个月86400 一天2880
 			var fr [32]byte
 			for i := 0; i < 32; i++ {
@@ -44,10 +47,14 @@ func main() {
 				continue
 			}
 			ep := types.ElectionProof{VRFProof: electionRand}
+			if i%2880 == 0 {
+				t = types.BigAdd(t, inter)
+			}
 			p := types.NewInt(uint64(j) << 40) // TiB
-			total := 5
-			t := types.NewInt(uint64(total) << 60) //EiB
 			z := ep.ComputeWinCount(p, t)
+			if z < 1 {
+				continue
+			}
 			fmt.Println("epoch", i+curHight, "power", types.SizeStr(p), "total", types.SizeStr(t), "wincount", z)
 		}
 	}

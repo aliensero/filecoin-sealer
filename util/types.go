@@ -39,20 +39,16 @@ import (
 	"github.com/filecoin-project/lotus/chain/types"
 	"github.com/filecoin-project/lotus/cli"
 	"github.com/filecoin-project/lotus/lib/sigs"
-	_ "github.com/filecoin-project/lotus/lib/sigs/bls"
-	_ "github.com/filecoin-project/lotus/lib/sigs/secp"
 	lminer "github.com/filecoin-project/lotus/miner"
 
-	miner0 "github.com/filecoin-project/specs-actors/actors/builtin/miner"
-	proof0 "github.com/filecoin-project/specs-actors/actors/runtime/proof"
 	proof2 "github.com/filecoin-project/specs-actors/v2/actors/runtime/proof"
 
 	"github.com/filecoin-project/lotus/node/modules/dtypes"
 	"github.com/filecoin-project/lotus/node/modules/lp2p"
-	blockadt "github.com/filecoin-project/specs-actors/actors/util/adt"
 	builtin2 "github.com/filecoin-project/specs-actors/v2/actors/builtin"
 	miner2 "github.com/filecoin-project/specs-actors/v2/actors/builtin/miner"
 	power2 "github.com/filecoin-project/specs-actors/v2/actors/builtin/power"
+	blockadt "github.com/filecoin-project/specs-actors/v2/actors/util/adt"
 	block "github.com/ipfs/go-block-format"
 	cbor "github.com/ipfs/go-ipld-cbor"
 	mh "github.com/multiformats/go-multihash"
@@ -119,16 +115,17 @@ var NsNewInt = types.NewInt
 var NsNewTipSet = types.NewTipSet
 var NsDecodeBlockMsg = types.DecodeBlockMsg
 var NsBigFromBytes = types.BigFromBytes
+var NsDecodeSignedMessage = types.DecodeSignedMessage
 
 type NsNetworkName = dtypes.NetworkName
 
-type NsSectorPreCommitInfo = miner0.SectorPreCommitInfo
-type NsProveCommitSectorParams = miner0.ProveCommitSectorParams
-type NsMinerInfo = miner0.MinerInfo
-type NsSubmitWindowedPoStParams = miner0.SubmitWindowedPoStParams
-type NsPoStPartition = miner0.PoStPartition
-type NsDeclareFaultsRecoveredParams = miner0.DeclareFaultsRecoveredParams
-type NsRecoveryDeclaration = miner0.RecoveryDeclaration
+type NsSectorPreCommitInfo = miner2.SectorPreCommitInfo
+type NsProveCommitSectorParams = miner2.ProveCommitSectorParams
+type NsMinerInfo = miner2.MinerInfo
+type NsSubmitWindowedPoStParams = miner2.SubmitWindowedPoStParams
+type NsPoStPartition = miner2.PoStPartition
+type NsDeclareFaultsRecoveredParams = miner2.DeclareFaultsRecoveredParams
+type NsRecoveryDeclaration = miner2.RecoveryDeclaration
 
 var NsMethods = builtin2.MethodsMiner
 var NsMarketAddr = builtin2.StorageMarketActorAddr
@@ -215,15 +212,17 @@ var NsGenerateWindowPoSt = ffi.GenerateWindowPoSt
 var NsGeneratePoStFallbackSectorChallenges = ffi.GeneratePoStFallbackSectorChallenges
 var NsGenerateSingleVanillaProof = ffi.GenerateSingleVanillaProof
 var NsGenerateWindowPoStWithVanilla = ffi.GenerateWindowPoStWithVanilla
+var NsVerifyWinningPoSt = ffi.VerifyWinningPoSt
 
-type NsSectorInfo = proof0.SectorInfo
-type NsPoStProof = proof0.PoStProof
+type NsSectorInfo = proof2.SectorInfo
+type NsPoStProof = proof2.PoStProof
 
 var NsActorStore = store.ActorStore
 var NsDrawRandomness = store.DrawRandomness
 
 var NsDhtProtocolName = build.DhtProtocolName
 var NsBlocksTopic = build.BlocksTopic
+var NsMessageTopic = build.MessagesTopic
 var NsBuiltinBootstrap = build.BuiltinBootstrap
 var NsTicketRandomnessLookback = build.TicketRandomnessLookback
 var NsBlockDelaySecs = build.BlockDelaySecs
@@ -246,6 +245,11 @@ var NsComputeVRF = gen.ComputeVRF
 var NsGetFullNodeAPI = cli.GetFullNodeAPI
 
 var NsNewCborStore = cbor.NewCborStore
+
+var NsMakeEmptyArray = blockadt.MakeEmptyArray
+var NsWrapStore = blockadt.WrapStore
+
+type NsWinningPoStVerifyInfo = proof2.WinningPoStVerifyInfo
 
 func NsSealPreCommitPhase1(nsProof NsRegisteredSealProof, cacheDirPath, stagedSectorPath, sealedSectorPath string, nsSectorNum NsSectorNum, nsActorID NsActorID, nsTicket NsSealRandomness, nsPieceInfo []NsPieceInfo) ([]byte, error) {
 

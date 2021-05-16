@@ -4,7 +4,7 @@ import (
 	logging "github.com/ipfs/go-log/v2"
 	"github.com/urfave/cli/v2"
 	"gitlab.ns/lotus-worker/util"
-	"go.uber.org/fx"
+	up2p "gitlab.ns/lotus-worker/util/p2p"
 )
 
 var log = logging.Logger("p2p")
@@ -17,44 +17,41 @@ var SubCmd = &cli.Command{
 	Name: "sub",
 	Flags: []cli.Flag{
 		&cli.StringFlag{
-			Name:  "netname",
-			Usage: "Networker name [testnetnet|calibrationnet]",
-			Value: "testnetnet",
-			//Value: "calibrationnet",
+			Name:  "repo",
+			Usage: "chain bitswap repo",
+			Value: "chain-swap-repo",
 		},
 		&cli.StringFlag{
-			Name:  "lotusapi",
-			Usage: "lotus api string [https://api.node.glif.io|https://calibration.node.glif.io]",
-			Value: "https://api.node.glif.io",
+			Name:  "privatekey",
+			Usage: "private key",
 		},
-		&cli.StringFlag{
-			Name:  "actor",
-			Usage: "actor id",
-			Value: "t01000",
-		},
-		&cli.StringFlag{
-			Name:  "prihex",
-			Usage: "private key hex",
-		},
-		&cli.StringFlag{
-			Name:  "sealedpath",
-			Value: "/root/miner_storage",
+		&cli.Uint64Flag{
+			Name:  "actorid",
+			Usage: "actorID",
 		},
 	},
 	Action: func(cctx *cli.Context) error {
 		ctx := cctx.Context
-		opts := []fx.Option{}
-		opts = append(opts, LIBP2PONLY...)
-		opts = append(opts, Override(new(util.NsNetworkName), util.NsNetworkName(cctx.String("netname"))))
-		opts = append(opts, Override(new(util.LotusApiStr), util.LotusApiStr(cctx.String("lotusapi"))))
-		opts = append(opts, Override(new(AddrStr), AddrStr(cctx.String("actor"))))
-		opts = append(opts, Override(new(PriHex), PriHex(cctx.String("prihex"))))
-		opts = append(opts, Override(new(SealedPath), SealedPath(cctx.String("sealedpath"))))
-		stopFunc, err := NewNoDefault(ctx, opts...)
+		r, err := up2p.CreateRepo(cctx.String("repo"))
 		if err != nil {
 			return err
 		}
-		defer stopFunc(ctx)
+		err = r.Init(up2p.NsFullNode)
+		if err != nil {
+			return err
+		}
+		stop, err := up2p.NsNodeNew(ctx,
+			up2p.Repo(r),
+			up2p.ChainSwapOpt,
+			up2p.NsOverride(new(up2p.PrivateKey), up2p.PrivateKey(cctx.String("privatekey"))),
+			up2p.NsOverride(new(util.NsAddress), func() (util.NsAddress, error) {
+				return util.NsNewIDAddress(cctx.Uint64("actorid"))
+			}),
+		)
+		if err != nil {
+			return err
+		}
+		defer stop(ctx)
 		return nil
 	},
 }
