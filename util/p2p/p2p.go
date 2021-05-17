@@ -224,6 +224,10 @@ var ChainSwapOpt = node.Options(
 	node.Override(new(MiningCallBackFun), func() MiningCallBackFun {
 		return MinerMinng
 	}),
+	node.Override(new(Faddr), func() Faddr {
+		return Faddr("127.0.0.1:4321")
+	}),
+	node.Override(node.SetGenesisKey, ServerRPC),
 	node.Override(node.HandleIncomingBlocksKey, HandleIncomingBlocks),
 )
 

@@ -36,6 +36,7 @@ require (
 	github.com/libp2p/go-libp2p-kad-dht v0.11.1 // indirect
 	github.com/libp2p/go-libp2p-pubsub v0.4.2-0.20210212194758-6c1addf493eb
 	github.com/multiformats/go-multihash v0.0.14
+	github.com/prometheus/common v0.10.0
 	github.com/urfave/cli/v2 v2.3.0
 	github.com/whyrusleeping/cbor-gen v0.0.0-20210219115102-f37d292932f2
 	github.com/whyrusleeping/go-logging v0.0.1 // indirect
