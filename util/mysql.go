@@ -188,6 +188,16 @@ type DbWorkerLogin struct {
 	State    int64
 }
 
+type DbTransaction struct {
+	Model
+	Cid     string
+	From    string
+	To      string
+	Value   string
+	Method  uint64
+	NetName string
+}
+
 func InitMysql(user, passwd, ip, port, database string) (*gorm.DB, error) {
 	dsn := fmt.Sprintf("%s:%s@tcp(%s:%s)/%s?charset=utf8mb4&parseTime=True&loc=Local", user, passwd, ip, port, database)
 	db, err := gorm.Open("mysql", dsn)
@@ -200,7 +210,7 @@ func InitMysql(user, passwd, ip, port, database string) (*gorm.DB, error) {
 		sqlDB.SetMaxIdleConns(10)  //空闲连接数
 		sqlDB.SetMaxOpenConns(100) //最大连接数
 		sqlDB.SetConnMaxLifetime(time.Minute)
-		db.Set("gorm:table_options", "ENGINE=InnoDB").AutoMigrate(&DbTaskLog{}, &DbTaskInfo{}, &DbTaskFailed{}, &DbAddressInfo{}, &DbWorkerLogin{}, &DbPostInfo{})
+		db.Set("gorm:table_options", "ENGINE=InnoDB").AutoMigrate(&DbTaskLog{}, &DbTaskInfo{}, &DbTaskFailed{}, &DbAddressInfo{}, &DbWorkerLogin{}, &DbPostInfo{}, &DbTransaction{})
 		// w.db.Model(&DbWorkerRegister{}).AddIndex("idx_host_name", "host_name")
 	}
 	if _, ok := os.LookupEnv("MYSQLDEBUG"); ok {

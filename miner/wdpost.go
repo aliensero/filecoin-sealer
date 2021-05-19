@@ -281,7 +281,7 @@ loop:
 	for {
 		select {
 		case t := <-trnmsgChan:
-			log.Infof("PoStInfo submitPoSt loop transation error %v", t.Err)
+			log.Infof("PoStInfo submitPoSt loop transaction error %v", t.Err)
 			if index == -1 {
 				index = t.PartitionIndex
 			}

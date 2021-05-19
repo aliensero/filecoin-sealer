@@ -13,7 +13,6 @@ import (
 	"github.com/filecoin-project/lotus/blockstore"
 	bstore "github.com/filecoin-project/lotus/blockstore"
 	"github.com/filecoin-project/lotus/build"
-	"github.com/filecoin-project/lotus/chain/exchange"
 	"github.com/filecoin-project/lotus/chain/store"
 	"github.com/filecoin-project/lotus/chain/sub"
 	"github.com/filecoin-project/lotus/chain/types"
@@ -111,23 +110,49 @@ func Repo(r repo.Repo) node.Option {
 	}
 }
 
+var ChainSwapOpt = node.Options(
+	node.LibP2P,
+	node.Override(new(*peermgr.PeerMgr), peermgr.NewPeerMgr),
+	node.Override(node.RunPeerMgrKey, modules.RunPeerMgr),
+	node.Override(new(dtypes.NetworkName), func() dtypes.NetworkName {
+		return NATNAME
+	}),
+	node.Override(new(dtypes.DrandSchedule), modules.BuiltinDrandConfig),
+	node.Override(new(dtypes.BootstrapPeers), modules.BuiltinBootstrap),
+	node.Override(new(dtypes.DrandBootstrap), modules.DrandBootstrap),
+	node.Override(new(dtypes.ChainBitswap), modules.ChainBitswap),
+	node.Override(new(dtypes.ChainBlockService), modules.ChainBlockService),
+	node.Override(new(api.FullNode), func() (api.FullNode, error) {
+		api, _, err := client.NewFullNodeRPC(context.TODO(), LOTUSAPISTR, nil)
+		return api, err
+	}),
+	node.Override(new(PrivateKey), func() PrivateKey {
+		return PrivateKey("")
+	}),
+	node.Override(new(address.Address), func() (address.Address, error) {
+		return address.NewIDAddress(0)
+	}),
+	node.Override(new(*util.Key), func(pri PrivateKey) (*util.Key, error) { return util.GenerateKeyByHexString(string(pri)) }),
+	node.Override(new(SealedPath), func() SealedPath {
+		return "/data01/alien/t012212"
+	}),
+	node.Override(new(*Mpool), NewMpool),
+	node.Override(new(MiningCallBackFun), func() MiningCallBackFun {
+		return MinerMinng
+	}),
+	node.Override(new(Faddr), func() Faddr {
+		return Faddr("127.0.0.1:4321")
+	}),
+	node.Override(node.SetGenesisKey, ServerRPC),
+	node.Override(node.HandleIncomingBlocksKey, HandleIncomingBlocks),
+)
+
 type MiningCallBackFun func(context.Context, *types.BlockHeader, api.FullNode, address.Address, *util.Key, SealedPath, []*types.SignedMessage) (*util.NsBlockHeader, error)
 
-func HandleIncomingBlocks(mctx helpers.MetricsCtx, lc fx.Lifecycle, ps *pubsub.PubSub, bs dtypes.ChainBlockService, cbs blockstore.Blockstore, h host.Host, nn dtypes.NetworkName, fa api.FullNode, ki *util.Key, actorID address.Address, sp SealedPath, mp *Mpool, cb MiningCallBackFun) {
+func HandleIncomingBlocks(mctx helpers.MetricsCtx, lc fx.Lifecycle, ps *pubsub.PubSub, h host.Host, nn dtypes.NetworkName, bs dtypes.ChainBlockService, cbs blockstore.Blockstore, fa api.FullNode, ki *util.Key, actorID address.Address, sp SealedPath, mp *Mpool, cb MiningCallBackFun) {
 	ctx := helpers.LifecycleCtx(mctx, lc)
 	topic := build.BlocksTopic(nn)
-	if err := ps.RegisterTopicValidator(topic, func(ctx context.Context, pid peer.ID, msg *pubsub.Message) pubsub.ValidationResult {
-		blk, err := types.DecodeBlockMsg(msg.GetData())
-		if err != nil {
-			log.Error(err)
-			return pubsub.ValidationReject
-		}
-		log.Warn("block message validate")
-		msg.ValidatorData = blk
-		h.Network().ConnsToPeer(msg.ReceivedFrom)
-		log.Infof("conns %v", len(h.Network().Conns()))
-		return pubsub.ValidationAccept
-	}); err != nil {
+	if err := ps.RegisterTopicValidator(topic, checkBlockMessage(h)); err != nil {
 		panic(err)
 	}
 
@@ -192,43 +217,20 @@ func HandleIncomingBlocks(mctx helpers.MetricsCtx, lc fx.Lifecycle, ps *pubsub.P
 	}
 }
 
-var ChainSwapOpt = node.Options(
-	node.LibP2P,
-	node.Override(new(*peermgr.PeerMgr), peermgr.NewPeerMgr),
-	node.Override(node.RunPeerMgrKey, modules.RunPeerMgr),
-	node.Override(new(dtypes.NetworkName), func() dtypes.NetworkName {
-		return NATNAME
-	}),
-	node.Override(new(dtypes.DrandSchedule), modules.BuiltinDrandConfig),
-	node.Override(new(dtypes.BootstrapPeers), modules.BuiltinBootstrap),
-	node.Override(new(dtypes.DrandBootstrap), modules.DrandBootstrap),
-	node.Override(new(dtypes.ChainBitswap), modules.ChainBitswap),
-	node.Override(new(dtypes.ChainBlockService), modules.ChainBlockService),
-	node.Override(new(api.FullNode), func() (api.FullNode, error) {
-		api, _, err := client.NewFullNodeRPC(context.TODO(), LOTUSAPISTR, nil)
-		return api, err
-	}),
-	node.Override(new(PrivateKey), func() PrivateKey {
-		return PrivateKey("")
-	}),
-	node.Override(new(address.Address), func() (address.Address, error) {
-		return address.NewIDAddress(0)
-	}),
-	node.Override(new(*util.Key), func(pri PrivateKey) (*util.Key, error) { return util.GenerateKeyByHexString(string(pri)) }),
-	node.Override(new(SealedPath), func() SealedPath {
-		return "/data01/alien/t012212"
-	}),
-	node.Override(new(*Mpool), NewMpool),
-	node.Override(new(MiningCallBackFun), func() MiningCallBackFun {
-		return MinerMinng
-	}),
-	node.Override(new(Faddr), func() Faddr {
-		return Faddr("127.0.0.1:4321")
-	}),
-	node.Override(new(exchange.Server), exchange.NewServer),
-	node.Override(node.SetGenesisKey, ServerRPC),
-	node.Override(node.HandleIncomingBlocksKey, HandleIncomingBlocks),
-)
+func checkBlockMessage(h host.Host) func(ctx context.Context, pid peer.ID, msg *pubsub.Message) pubsub.ValidationResult {
+	return func(ctx context.Context, pid peer.ID, msg *pubsub.Message) pubsub.ValidationResult {
+		blk, err := types.DecodeBlockMsg(msg.GetData())
+		if err != nil {
+			log.Error(err)
+			return pubsub.ValidationReject
+		}
+		log.Warn("block message validate")
+		msg.ValidatorData = blk
+		h.Network().ConnsToPeer(msg.ReceivedFrom)
+		log.Infof("conns %v", len(h.Network().Conns()))
+		return pubsub.ValidationAccept
+	}
+}
 
 func fetchMessage(ctx context.Context, cbs blockstore.Blockstore, bs dtypes.ChainBlockService, msg *pubsub.Message) {
 	blk, ok := msg.ValidatorData.(*types.BlockMsg)

@@ -26,6 +26,7 @@ func main() {
 	localCmds := []*cli.Command{
 		daemonCmd,
 		p2p.SubCmd,
+		p2p.TranCmd,
 	}
 
 	app := cli.App{
