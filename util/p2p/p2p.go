@@ -19,6 +19,7 @@ import (
 	"github.com/filecoin-project/lotus/chain/types"
 	"github.com/filecoin-project/lotus/chain/vm"
 	"github.com/filecoin-project/lotus/lib/lotuslog"
+	"github.com/filecoin-project/lotus/lib/peermgr"
 	"github.com/filecoin-project/lotus/metrics"
 	"github.com/filecoin-project/lotus/node"
 	"github.com/filecoin-project/lotus/node/modules"
@@ -137,16 +138,6 @@ func HandleIncomingBlocks(mctx helpers.MetricsCtx, lc fx.Lifecycle, ps *pubsub.P
 		panic(err)
 	}
 
-	infos, err := build.BuiltinBootstrap()
-	if err != nil {
-		log.Errorf("failed to get bootstrap peers: %w", err)
-		return
-	}
-	for _, i := range infos {
-		err := h.Connect(ctx, i)
-		log.Infof("host connect error %v", err)
-	}
-
 	curHeight := abi.ChainEpoch(0)
 	for {
 		msg, err := blocksub.Next(ctx)
@@ -203,6 +194,8 @@ func HandleIncomingBlocks(mctx helpers.MetricsCtx, lc fx.Lifecycle, ps *pubsub.P
 
 var ChainSwapOpt = node.Options(
 	node.LibP2P,
+	node.Override(new(*peermgr.PeerMgr), peermgr.NewPeerMgr),
+	node.Override(node.RunPeerMgrKey, modules.RunPeerMgr),
 	node.Override(new(dtypes.NetworkName), func() dtypes.NetworkName {
 		return NATNAME
 	}),
