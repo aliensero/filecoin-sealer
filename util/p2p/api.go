@@ -1,6 +1,7 @@
 package up2p
 
 import (
+	"context"
 	"net"
 	"net/http"
 
@@ -9,10 +10,12 @@ import (
 	"github.com/filecoin-project/lotus/node/modules/dtypes"
 	"github.com/gorilla/mux"
 	"github.com/ipfs/go-cid"
+	"gitlab.ns/lotus-worker/util"
 )
 
 type ChainInfo struct {
-	cbs dtypes.ChainBlockstore
+	cbs      dtypes.ChainBlockstore
+	blocksrv dtypes.ChainBlockService
 }
 
 func (ci *ChainInfo) GetBlock(cstr string) (*types.BlockHeader, error) {
@@ -54,11 +57,28 @@ func (ci *ChainInfo) GetMessage(cstr string) (*types.Message, error) {
 	return msg, err
 }
 
+func (ci *ChainInfo) FetchMessage(cstr string) ([]*types.Message, error) {
+	cid, err := util.NsCidDecode(cstr)
+	if err != nil {
+		return nil, err
+	}
+	return FetchMsgByCid(context.TODO(), ci.cbs, ci.blocksrv, cid)
+}
+
+func (ci *ChainInfo) FetchSigMessage(cstr string) ([]*types.SignedMessage, error) {
+	cid, err := util.NsCidDecode(cstr)
+	if err != nil {
+		return nil, err
+	}
+	return FetchSigMsgByCid(context.TODO(), ci.cbs, ci.blocksrv, cid)
+}
+
 type Faddr string
 
-func ServerRPC(cbs dtypes.ChainBlockstore, addr Faddr) error {
+func ServerRPC(cbs dtypes.ChainBlockstore, blocksrv dtypes.ChainBlockService, addr Faddr) error {
 	ci := ChainInfo{
 		cbs,
+		blocksrv,
 	}
 	rpcServer := jsonrpc.NewServer()
 	mux := mux.NewRouter()

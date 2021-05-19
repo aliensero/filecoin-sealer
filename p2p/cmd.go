@@ -29,6 +29,11 @@ var SubCmd = &cli.Command{
 			Name:  "actorid",
 			Usage: "actorID",
 		},
+		&cli.StringFlag{
+			Name:  "listen",
+			Usage: "RPC server listen",
+			Value: "127.0.0.1:4321",
+		},
 	},
 	Action: func(cctx *cli.Context) error {
 		ctx := cctx.Context
@@ -47,6 +52,7 @@ var SubCmd = &cli.Command{
 			up2p.NsOverride(new(util.NsAddress), func() (util.NsAddress, error) {
 				return util.NsNewIDAddress(cctx.Uint64("actorid"))
 			}),
+			up2p.NsOverride(new(up2p.Faddr), up2p.Faddr(cctx.String("listen"))),
 		)
 		if err != nil {
 			return err

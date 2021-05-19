@@ -13,6 +13,7 @@ import (
 	"github.com/filecoin-project/lotus/blockstore"
 	bstore "github.com/filecoin-project/lotus/blockstore"
 	"github.com/filecoin-project/lotus/build"
+	"github.com/filecoin-project/lotus/chain/exchange"
 	"github.com/filecoin-project/lotus/chain/store"
 	"github.com/filecoin-project/lotus/chain/sub"
 	"github.com/filecoin-project/lotus/chain/types"
@@ -76,7 +77,11 @@ func Repo(r repo.Repo) node.Option {
 			node.Override(new(types.KeyStore), modules.KeyStore),
 			node.Override(new(ci.PrivKey), lp2p.PrivKey),
 			node.Override(new(ci.PubKey), ci.PrivKey.GetPublic),
-			node.Override(new(peer.ID), peer.IDFromPublicKey),
+			node.Override(new(peer.ID), func(pk ci.PubKey) (peer.ID, error) {
+				pid, err := peer.IDFromPublicKey(pk)
+				log.Infof("PeerID %v", pid)
+				return pid, err
+			}),
 			node.Override(new(dtypes.UniversalBlockstore), func(lc fx.Lifecycle, mctx helpers.MetricsCtx) (dtypes.UniversalBlockstore, error) {
 				bs, err := lr.Blockstore(helpers.LifecycleCtx(mctx, lc), repo.UniversalBlockstore)
 				if err != nil {
@@ -227,6 +232,7 @@ var ChainSwapOpt = node.Options(
 	node.Override(new(Faddr), func() Faddr {
 		return Faddr("127.0.0.1:4321")
 	}),
+	node.Override(new(exchange.Server), exchange.NewServer),
 	node.Override(node.SetGenesisKey, ServerRPC),
 	node.Override(node.HandleIncomingBlocksKey, HandleIncomingBlocks),
 )
@@ -279,6 +285,28 @@ func fetchMessage(ctx context.Context, cbs blockstore.Blockstore, bs dtypes.Chai
 		)
 		log.Warnw("received block with large delay from miner", "block", blk.Cid(), "delay", delay, "miner", blk.Header.Miner)
 	}
+}
+
+func FetchMsgByCid(ctx context.Context, cbs blockstore.Blockstore, bs dtypes.ChainBlockService, c cid.Cid) ([]*types.Message, error) {
+	ses := bserv.NewSession(ctx, bs)
+	log.Debug("about to fetch messages for block from pubsub")
+	msgs, err := sub.FetchMessagesByCids(ctx, ses, []cid.Cid{c})
+	if err != nil {
+		log.Errorf("failed to fetch all bls messages for block received over pubusb: %s", err)
+		return nil, err
+	}
+	return msgs, nil
+}
+
+func FetchSigMsgByCid(ctx context.Context, cbs blockstore.Blockstore, bs dtypes.ChainBlockService, c cid.Cid) ([]*types.SignedMessage, error) {
+	ses := bserv.NewSession(ctx, bs)
+	log.Debug("about to fetch signedmessages for block from pubsub")
+	msgs, err := sub.FetchSignedMessagesByCids(ctx, ses, []cid.Cid{c})
+	if err != nil {
+		log.Errorf("failed to fetch all bls signedmessages for block received over pubusb: %s", err)
+		return nil, err
+	}
+	return msgs, nil
 }
 
 func SaveBlock(ctx context.Context, cbs blockstore.Blockstore, bmsgs []*types.Message, smsgs []*types.SignedMessage, head *types.BlockHeader) error {
