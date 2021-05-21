@@ -71,26 +71,34 @@ var TranCmd = &cli.Command{
 			Name:  "repo",
 			Usage: "chain bitswap repo",
 			Value: "chain-repo",
-		}, &cli.StringFlag{
+		},
+		&cli.StringFlag{
 			Name:  "user",
 			Usage: "database user",
 			Value: "root",
-		}, &cli.StringFlag{
+		},
+		&cli.StringFlag{
 			Name:  "password",
 			Usage: "database password",
-			Value: "123456",
-		}, &cli.StringFlag{
+		},
+		&cli.StringFlag{
 			Name:  "ip",
 			Usage: "database ip",
 			Value: "127.0.0.1",
-		}, &cli.StringFlag{
+		},
+		&cli.StringFlag{
 			Name:  "port",
 			Usage: "database port",
-			Value: "3306",
-		}, &cli.StringFlag{
+		},
+		&cli.StringFlag{
 			Name:  "database",
 			Usage: "database name",
 			Value: "db_worker",
+		},
+		&cli.StringFlag{
+			Name:  "listen",
+			Usage: "RPC server listen",
+			Value: "127.0.0.1:4321",
 		},
 	},
 	Action: func(cctx *cli.Context) error {
@@ -115,6 +123,7 @@ var TranCmd = &cli.Command{
 					Database: cctx.String("database"),
 				}
 			}),
+			up2p.NsOverride(new(up2p.Faddr), up2p.Faddr(cctx.String("listen"))),
 		)
 		if err != nil {
 			return err

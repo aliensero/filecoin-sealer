@@ -94,6 +94,39 @@ func ServerRPC(cbs dtypes.ChainBlockstore, blocksrv dtypes.ChainBlockService, ad
 	if err != nil {
 		return err
 	}
-	go srv.Serve(nl)
+	go func() {
+		err := srv.Serve(nl)
+		if err != nil {
+			log.Errorf("serverRPC listen error %v", err)
+		}
+	}()
+	return nil
+}
+
+func ServerFrom(registerName string, addr Faddr, handle interface{}, getHandle map[string]func(http.ResponseWriter, *http.Request)) error {
+	rpcServer := jsonrpc.NewServer()
+	mux := mux.NewRouter()
+	rpcServer.Register(string(registerName), handle)
+	mux.Handle("/rpc/v0", rpcServer)
+	for k, v := range getHandle {
+		mux.HandleFunc("/"+k, v)
+	}
+	mux.PathPrefix("/").Handler(http.DefaultServeMux)
+
+	srv := &http.Server{
+		Handler: mux,
+	}
+	log.Info("Setting up control endpoint at " + addr)
+	nl, err := net.Listen("tcp", string(addr))
+	if err != nil {
+		log.Errorf("serverRPC listen error %v", err)
+		return err
+	}
+	go func() {
+		err := srv.Serve(nl)
+		if err != nil {
+			log.Errorf("serverRPC Serve error %v", err)
+		}
+	}()
 	return nil
 }

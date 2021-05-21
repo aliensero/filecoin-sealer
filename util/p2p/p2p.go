@@ -232,6 +232,18 @@ func checkBlockMessage(h host.Host) func(ctx context.Context, pid peer.ID, msg *
 	}
 }
 
+func checkIncomingMessage(h host.Host) func(ctx context.Context, pid peer.ID, msg *pubsub.Message) pubsub.ValidationResult {
+	return func(ctx context.Context, pid peer.ID, msg *pubsub.Message) pubsub.ValidationResult {
+		smsg, err := types.DecodeSignedMessage(msg.GetData())
+		if err != nil {
+			log.Error(err)
+			return pubsub.ValidationReject
+		}
+		msg.ValidatorData = smsg
+		return pubsub.ValidationAccept
+	}
+}
+
 func fetchMessage(ctx context.Context, cbs blockstore.Blockstore, bs dtypes.ChainBlockService, msg *pubsub.Message) {
 	blk, ok := msg.ValidatorData.(*types.BlockMsg)
 	if !ok {

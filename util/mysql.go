@@ -188,11 +188,16 @@ type DbWorkerLogin struct {
 	State    int64
 }
 
+const (
+	DR = "DR"
+	CR = "CR"
+)
+
 type DbTransaction struct {
 	Model
 	Cid     string
-	From    string
-	To      string
+	Acct    string
+	Type    string
 	Value   string
 	Method  uint64
 	NetName string
