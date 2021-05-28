@@ -9,8 +9,10 @@ import (
 
 	"gitlab.ns/lotus-worker/util"
 
+	"github.com/filecoin-project/go-amt-ipld/v3"
 	"github.com/libp2p/go-libp2p-core/peer"
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
+	cbg "github.com/whyrusleeping/cbor-gen"
 	"golang.org/x/xerrors"
 )
 
@@ -66,7 +68,7 @@ func NewMpool(ps *pubsub.PubSub, nn util.NsNetworkName) *Mpool {
 type PrivateKey string
 type SealedPath string
 
-func MinerMinng(ctx context.Context, blkh *util.NsBlockHeader, fa util.LotusAPI, mr util.NsAddress, ki *util.Key, sealedPath SealedPath, msgs []*util.NsSignedMessage) (*util.NsBlockHeader, error) {
+func MinerMinng(ctx context.Context, blkh *util.NsBlockHeader, fa util.LotusAPI, mr util.NsAddress, ki *util.Key, sealedPath SealedPath, parentMsg []*util.NsMessage) (*util.NsBlockHeader, error) {
 	curTipset, err := fa.ChainHead(ctx)
 	for {
 		if err != nil {
@@ -104,28 +106,19 @@ func MinerMinng(ctx context.Context, blkh *util.NsBlockHeader, fa util.LotusAPI,
 		return nil, xerrors.Errorf("MinerMinng getTicketAndElectionProof wincount %v error %v", ep.WinCount, err)
 	}
 
-	nosigMsgs := make([]*util.NsMessage, len(msgs))
-	for i, smsg := range msgs {
-		cmsg := smsg.Message
-		nosigMsgs[i] = &cmsg
-	}
-
-	statOut, err := fa.StateCompute(ctx, curTipset.Height(), nosigMsgs, curTipset.Key())
+	statOut, err := fa.StateCompute(ctx, curTipset.Height(), parentMsg, curTipset.Key())
 	if err != nil {
 		return nil, xerrors.Errorf("MinerMinng StateCompute error %v", err)
 	}
 
 	blkStor := util.NsNewMemory()
 	ipfsbs := util.NsNewCborStore(blkStor)
-	bs := util.NsWrapStore(ctx, ipfsbs)
-	rectarr := util.NsMakeEmptyArray(bs)
-	for i, traMsg := range statOut.Trace {
+	recs := make([]cbg.CBORMarshaler, 0)
+	for _, traMsg := range statOut.Trace {
 		receipt := traMsg.MsgRct
-		if err := rectarr.Set(uint64(i), receipt); err != nil {
-			return nil, xerrors.Errorf("MinerMinng failed to build receipts amt: %v", err)
-		}
+		recs = append(recs, receipt)
 	}
-	rectroot, err := rectarr.Root()
+	rectroot, err := amt.FromArray(ctx, ipfsbs, recs)
 	if err != nil {
 		return nil, xerrors.Errorf("MinerMinng failed to build receipts amt: %v", err)
 	}
@@ -146,7 +139,8 @@ func MinerMinng(ctx context.Context, blkh *util.NsBlockHeader, fa util.LotusAPI,
 	}
 
 	uts := curTipset.MinTimestamp() + util.NsBlockDelaySecs
-
+	af := time.After(time.Duration(int64(uts)-time.Now().Unix()) * time.Second)
+	<-af
 	blkHead := &util.NsBlockHeader{
 		Miner:         mr,
 		Parents:       curTipset.Key().Cids(),
@@ -245,7 +239,8 @@ func publishBlockMsg(ctx context.Context, fa util.LotusAPI, blkHead *util.NsBloc
 	}
 	blkHead.Messages = blsmsgroot
 
-	parentWeight, err := fa.ChainTipSetWeight(ctx, util.NsTipSetKey{})
+	tsKey := util.NsNewTipSetKey(blkHead.Parents...)
+	parentWeight, err := fa.ChainTipSetWeight(ctx, tsKey)
 	if err != nil {
 		return err
 	}

@@ -137,9 +137,6 @@ var ChainSwapOpt = node.Options(
 		return "/data01/alien/t012212"
 	}),
 	node.Override(new(*Mpool), NewMpool),
-	node.Override(new(MiningCallBackFun), func() MiningCallBackFun {
-		return MinerMinng
-	}),
 	node.Override(new(Faddr), func() Faddr {
 		return Faddr("127.0.0.1:4321")
 	}),
@@ -147,9 +144,7 @@ var ChainSwapOpt = node.Options(
 	node.Override(node.HandleIncomingBlocksKey, HandleIncomingBlocks),
 )
 
-type MiningCallBackFun func(context.Context, *types.BlockHeader, api.FullNode, address.Address, *util.Key, SealedPath, []*types.SignedMessage) (*util.NsBlockHeader, error)
-
-func HandleIncomingBlocks(mctx helpers.MetricsCtx, lc fx.Lifecycle, ps *pubsub.PubSub, h host.Host, nn dtypes.NetworkName, bs dtypes.ChainBlockService, cbs blockstore.Blockstore, fa api.FullNode, ki *util.Key, actorID address.Address, sp SealedPath, mp *Mpool, cb MiningCallBackFun) {
+func HandleIncomingBlocks(mctx helpers.MetricsCtx, lc fx.Lifecycle, ps *pubsub.PubSub, h host.Host, nn dtypes.NetworkName, bs dtypes.ChainBlockService, cbs blockstore.Blockstore, fa api.FullNode, ki *util.Key, actorID address.Address, sp SealedPath, mp *Mpool) {
 	ctx := helpers.LifecycleCtx(mctx, lc)
 	topic := build.BlocksTopic(nn)
 	if err := ps.RegisterTopicValidator(topic, checkBlockMessage(h)); err != nil {
@@ -162,6 +157,8 @@ func HandleIncomingBlocks(mctx helpers.MetricsCtx, lc fx.Lifecycle, ps *pubsub.P
 	if err != nil {
 		panic(err)
 	}
+	subChan := make(chan *pubsub.Message, 10)
+	go miningServer(ctx, cbs, bs, subChan, fa, actorID, ki, sp, mp, ps, topic)
 
 	curHeight := abi.ChainEpoch(0)
 	for {
@@ -181,19 +178,65 @@ func HandleIncomingBlocks(mctx helpers.MetricsCtx, lc fx.Lifecycle, ps *pubsub.P
 			continue
 		}
 
-		if curHeight >= blk.Header.Height {
+		if curHeight > blk.Header.Height {
 			continue
 		}
 		curHeight = blk.Header.Height
+		subChan <- msg
+	}
+}
+
+func miningServer(ctx context.Context, cbs blockstore.Blockstore, bs dtypes.ChainBlockService, pms chan *pubsub.Message, fa util.LotusAPI, mr util.NsAddress, ki *util.Key, sealedPath SealedPath, mp *Mpool, pub *pubsub.PubSub, topic string) {
+	for {
+		parentMsg := make([]*types.Message, 0)
+		mapMsg := make(map[cid.Cid]*types.Message)
+		af := time.After(10 * time.Second)
+		var h *types.BlockHeader
+		start := build.Clock.Now()
+	loop:
+		for {
+			select {
+			case pm := <-pms:
+				if h == nil {
+					blk, ok := pm.ValidatorData.(*types.BlockMsg)
+					if !ok {
+						log.Warnf("pubsub block validator passed on wrong type: %#v", pm.ValidatorData)
+					} else {
+						h = blk.Header
+					}
+				}
+				rs, err := fetchMessage(ctx, cbs, bs, pm)
+				if err != nil {
+					log.Errorf("fetchMessage error %v", cbs, err)
+					break loop
+				}
+				for _, m := range rs {
+					if _, ok := mapMsg[m.Cid()]; !ok {
+						mapMsg[m.Cid()] = m
+						parentMsg = append(parentMsg, m)
+					}
+				}
+			case <-af:
+				break loop
+			}
+		}
+		took := build.Clock.Since(start)
+		if took > 26*time.Second {
+			log.Errorf("fetch parent message timeout,took %v", took)
+			continue
+		}
 		msgs := mp.Msgs
 		go func() {
 			defer mp.ClearMsg()
-			bh, err := cb(ctx, blk.Header, fa, actorID, ki, sp, msgs)
+			if h == nil {
+				return
+			}
+			bh, err := MinerMinng(ctx, h, fa, mr, ki, sealedPath, parentMsg)
 			if err != nil {
 				log.Errorf("MiningCallBackFun error %v", err)
 				return
 			}
-			err = publishBlockMsg(ctx, fa, bh, msgs, ki, ps, topic)
+			err = publishBlockMsg(ctx, fa, bh, msgs, ki, pub, topic)
 			if err != nil {
 				log.Errorf("publishBlockMsg error %v", err)
 				return
@@ -244,11 +287,11 @@ func checkIncomingMessage(h host.Host) func(ctx context.Context, pid peer.ID, ms
 	}
 }
 
-func fetchMessage(ctx context.Context, cbs blockstore.Blockstore, bs dtypes.ChainBlockService, msg *pubsub.Message) {
+func fetchMessage(ctx context.Context, cbs blockstore.Blockstore, bs dtypes.ChainBlockService, msg *pubsub.Message) ([]*types.Message, error) {
+	retMsg := make([]*types.Message, 0)
 	blk, ok := msg.ValidatorData.(*types.BlockMsg)
 	if !ok {
-		log.Warnf("pubsub block validator passed on wrong type: %#v", msg.ValidatorData)
-		return
+		return retMsg, xerrors.Errorf("pubsub block validator passed on wrong type: %#v", msg.ValidatorData)
 	}
 	src := msg.GetFrom()
 	timeout := time.Duration(build.BlockDelaySecs+build.PropagationDelaySecs) * time.Second
@@ -264,20 +307,21 @@ func fetchMessage(ctx context.Context, cbs blockstore.Blockstore, bs dtypes.Chai
 	log.Debug("about to fetch messages for block from pubsub")
 	bmsgs, err := sub.FetchMessagesByCids(ctx, ses, blk.BlsMessages)
 	if err != nil {
-		log.Errorf("failed to fetch all bls messages for block received over pubusb: %s; source: %s", err, src)
-		return
+		return retMsg, xerrors.Errorf("failed to fetch all bls messages for block received over pubusb: %s; source: %s", err, src)
 	}
+	retMsg = append(retMsg, bmsgs...)
 
 	smsgs, err := sub.FetchSignedMessagesByCids(ctx, ses, blk.SecpkMessages)
 	if err != nil {
-		log.Errorf("failed to fetch all secpk messages for block received over pubusb: %s; source: %s", err, src)
-		return
+		return retMsg, xerrors.Errorf("failed to fetch all secpk messages for block received over pubusb: %s; source: %s", err, src)
+	}
+	for _, sm := range smsgs {
+		retMsg = append(retMsg, &sm.Message)
 	}
 
 	err = SaveBlock(ctx, cbs, bmsgs, smsgs, blk.Header)
 	if err != nil {
-		log.Error(err)
-		return
+		log.Warn(err)
 	}
 
 	took := build.Clock.Since(start)
@@ -292,6 +336,7 @@ func fetchMessage(ctx context.Context, cbs blockstore.Blockstore, bs dtypes.Chai
 		)
 		log.Warnw("received block with large delay from miner", "block", blk.Cid(), "delay", delay, "miner", blk.Header.Miner)
 	}
+	return retMsg, nil
 }
 
 func FetchMsgByCid(ctx context.Context, cbs blockstore.Blockstore, bs dtypes.ChainBlockService, c cid.Cid) ([]*types.Message, error) {

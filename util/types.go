@@ -116,6 +116,7 @@ var NsNewTipSet = types.NewTipSet
 var NsDecodeBlockMsg = types.DecodeBlockMsg
 var NsBigFromBytes = types.BigFromBytes
 var NsDecodeSignedMessage = types.DecodeSignedMessage
+var NsNewTipSetKey = types.NewTipSetKey
 
 type NsNetworkName = dtypes.NetworkName
 
