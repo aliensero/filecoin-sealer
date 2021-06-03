@@ -189,8 +189,8 @@ func HandleIncomingBlocks(mctx helpers.MetricsCtx, lc fx.Lifecycle, ps *pubsub.P
 func miningServer(ctx context.Context, cbs blockstore.Blockstore, bs dtypes.ChainBlockService, pms chan *pubsub.Message, fa util.LotusAPI, mr util.NsAddress, ki *util.Key, sealedPath SealedPath, mp *Mpool, pub *pubsub.PubSub, topic string) {
 	for {
 		parentMsg := make([]*types.Message, 0)
-		mapMsg := make(map[cid.Cid]*types.Message)
-		af := time.After(10 * time.Second)
+		mapMsg := make(map[util.NsCid]*util.NsMessage)
+		af := time.After(15 * time.Second)
 		var h *types.BlockHeader
 		start := build.Clock.Now()
 	loop:
@@ -210,12 +210,13 @@ func miningServer(ctx context.Context, cbs blockstore.Blockstore, bs dtypes.Chai
 					log.Errorf("fetchMessage error %v", cbs, err)
 					break loop
 				}
-				for _, m := range rs {
-					if _, ok := mapMsg[m.Cid()]; !ok {
-						mapMsg[m.Cid()] = m
-						parentMsg = append(parentMsg, m)
+				for _, r := range rs {
+					if _, ok := mapMsg[r.Cid()]; !ok {
+						parentMsg = append(parentMsg, r)
+						mapMsg[r.Cid()] = r
 					}
 				}
+
 			case <-af:
 				break loop
 			}
@@ -231,12 +232,12 @@ func miningServer(ctx context.Context, cbs blockstore.Blockstore, bs dtypes.Chai
 			if h == nil {
 				return
 			}
-			bh, err := MinerMinng(ctx, h, fa, mr, ki, sealedPath, parentMsg)
+			bh, curts, err := MinerMinng(ctx, h, fa, mr, ki, sealedPath, parentMsg, mapMsg)
 			if err != nil {
 				log.Errorf("MiningCallBackFun error %v", err)
 				return
 			}
-			err = publishBlockMsg(ctx, fa, bh, msgs, ki, pub, topic)
+			err = publishBlockMsg(ctx, fa, bh, msgs, parentMsg, curts, ki, pub, topic)
 			if err != nil {
 				log.Errorf("publishBlockMsg error %v", err)
 				return

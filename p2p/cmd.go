@@ -1,6 +1,8 @@
 package p2p
 
 import (
+	"strconv"
+
 	"github.com/filecoin-project/lotus/node"
 	logging "github.com/ipfs/go-log/v2"
 	"github.com/urfave/cli/v2"
@@ -129,6 +131,31 @@ var TranCmd = &cli.Command{
 			return err
 		}
 		defer stop(ctx)
+		return nil
+	},
+}
+
+var ComputeReceis = &cli.Command{
+	Name: "compute-rec",
+	Action: func(cctx *cli.Context) error {
+		gass := cctx.Args().Slice()
+		ist := util.NsNewMemCborStore()
+		rs := make([]util.NsCBORMarshaler, 0)
+		arrstor := util.NsMakeEmptyArray(util.NsWrapStore(cctx.Context, ist))
+		for ii, g := range gass {
+			i, _ := strconv.ParseInt(g, 10, 64)
+			r := util.NsMessageReceipt{
+				ExitCode: 0,
+				Return:   nil,
+				GasUsed:  i,
+			}
+			log.Infof("r %#v", &r)
+			rs = append(rs, &r)
+			err := arrstor.Set(uint64(ii), &r)
+			log.Error(err)
+		}
+		cid, _ := arrstor.Root()
+		log.Infof("receipt cid %v", cid)
 		return nil
 	},
 }

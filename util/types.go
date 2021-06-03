@@ -43,6 +43,7 @@ import (
 
 	proof2 "github.com/filecoin-project/specs-actors/v2/actors/runtime/proof"
 
+	"github.com/filecoin-project/go-amt-ipld/v3"
 	"github.com/filecoin-project/lotus/node/modules/dtypes"
 	"github.com/filecoin-project/lotus/node/modules/lp2p"
 	builtin2 "github.com/filecoin-project/specs-actors/v2/actors/builtin"
@@ -139,6 +140,7 @@ var NsSigTypeBLS = crypto.SigTypeBLS
 
 var NsDomainSeparationTag_ElectionProofProduction = crypto.DomainSeparationTag_ElectionProofProduction
 var NsDomainSeparationTag_TicketProduction = crypto.DomainSeparationTag_TicketProduction
+var NsDomainSeparationTag_WinningPoStChallengeSeed = crypto.DomainSeparationTag_WinningPoStChallengeSeed
 
 var NsDomainSeparationTag_PoStChainCommit = crypto.DomainSeparationTag_PoStChainCommit
 var NsDomainSeparationTag_InteractiveSealChallengeSeed = crypto.DomainSeparationTag_InteractiveSealChallengeSeed
@@ -246,11 +248,18 @@ var NsComputeVRF = gen.ComputeVRF
 var NsGetFullNodeAPI = cli.GetFullNodeAPI
 
 var NsNewCborStore = cbor.NewCborStore
+var NsNewMemCborStore = cbor.NewMemCborStore
 
 var NsMakeEmptyArray = blockadt.MakeEmptyArray
 var NsWrapStore = blockadt.WrapStore
 
+var NsFromArray = amt.FromArray
+
+type NsCBORMarshaler = cbg.CBORMarshaler
+
 type NsWinningPoStVerifyInfo = proof2.WinningPoStVerifyInfo
+
+var NsComputeNextBaseFee = store.ComputeNextBaseFee
 
 func NsSealPreCommitPhase1(nsProof NsRegisteredSealProof, cacheDirPath, stagedSectorPath, sealedSectorPath string, nsSectorNum NsSectorNum, nsActorID NsActorID, nsTicket NsSealRandomness, nsPieceInfo []NsPieceInfo) ([]byte, error) {
 

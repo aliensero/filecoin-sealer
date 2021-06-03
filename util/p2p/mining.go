@@ -9,10 +9,10 @@ import (
 
 	"gitlab.ns/lotus-worker/util"
 
-	"github.com/filecoin-project/go-amt-ipld/v3"
+	"github.com/filecoin-project/lotus/build"
+	"github.com/filecoin-project/lotus/lib/peermgr"
 	"github.com/libp2p/go-libp2p-core/peer"
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
-	cbg "github.com/whyrusleeping/cbor-gen"
 	"golang.org/x/xerrors"
 )
 
@@ -28,7 +28,7 @@ func (mp *Mpool) ClearMsg() {
 	mp.Msgs = []*util.NsSignedMessage{}
 }
 
-func NewMpool(ps *pubsub.PubSub, nn util.NsNetworkName) *Mpool {
+func NewMpool(ps *pubsub.PubSub, nn util.NsNetworkName, pem *peermgr.PeerMgr) *Mpool {
 	mp := &Mpool{}
 	go func() {
 		msgTopic := util.NsMessageTopic(nn)
@@ -39,8 +39,8 @@ func NewMpool(ps *pubsub.PubSub, nn util.NsNetworkName) *Mpool {
 				return pubsub.ValidationReject
 			}
 			msg.ValidatorData = m
+			pem.AddFilecoinPeer(pid)
 			return pubsub.ValidationAccept
-
 		})
 		sub, err := ps.Subscribe(msgTopic)
 		if err != nil {
@@ -68,23 +68,23 @@ func NewMpool(ps *pubsub.PubSub, nn util.NsNetworkName) *Mpool {
 type PrivateKey string
 type SealedPath string
 
-func MinerMinng(ctx context.Context, blkh *util.NsBlockHeader, fa util.LotusAPI, mr util.NsAddress, ki *util.Key, sealedPath SealedPath, parentMsg []*util.NsMessage) (*util.NsBlockHeader, error) {
+func MinerMinng(ctx context.Context, blkh *util.NsBlockHeader, fa util.LotusAPI, mr util.NsAddress, ki *util.Key, sealedPath SealedPath, parentMsg []*util.NsMessage, mapMsg map[util.NsCid]*util.NsMessage) (*util.NsBlockHeader, *util.NsTipSet, error) {
 	curTipset, err := fa.ChainHead(ctx)
 	for {
 		if err != nil {
-			return nil, xerrors.Errorf("MinerMinng ChainHead error %v", err)
+			return nil, nil, xerrors.Errorf("MinerMinng ChainHead error %v", err)
 		}
 		if curTipset.Height() == blkh.Height {
 			break
 		}
 		if curTipset.Height() > blkh.Height {
-			return nil, xerrors.Errorf("MinerMinng ChainHead curTipset.Height(%v) > blkh.Height(%v)", curTipset.Height(), blkh.Height)
+			return nil, nil, xerrors.Errorf("MinerMinng ChainHead curTipset.Height(%v) > blkh.Height(%v)", curTipset.Height(), blkh.Height)
 		}
 		curTipset, err = fa.ChainHead(ctx)
 	}
 	mbi, round, err := getBaseInfo(ctx, blkh, fa, mr, curTipset)
 	if err != nil || mbi == nil {
-		return nil, xerrors.Errorf("MinerMinng get miner %v info mbi == nil %v error %v", mr, mbi == nil, err)
+		return nil, nil, xerrors.Errorf("MinerMinng get miner %v info mbi == nil %v error %v", mr, mbi == nil, err)
 	}
 
 	log.Infof("Time delta between now and our mining base: %ds", uint64(time.Now().Unix())-curTipset.MinTimestamp())
@@ -95,47 +95,63 @@ func MinerMinng(ctx context.Context, blkh *util.NsBlockHeader, fa util.LotusAPI,
 		rbase = bvals[len(bvals)-1]
 	}
 
-	electionRand, err := getElectionRand(mr, rbase.Data, round)
+	ticket, err := getTicketProof(ctx, rbase.Data, round, mr, ki, curTipset)
 	if err != nil {
-		return nil, xerrors.Errorf("MinerMinng failed to draw randomness: %v", err)
+		return nil, nil, xerrors.Errorf("MinerMinng failed to draw randomness: %v", err)
 	}
 
 	minerPower := mbi.MinerPower
-	ticket, ep, err := getTicketAndElectionProof(ctx, mbi, electionRand, mr, round, ki, minerPower)
+	ep, err := getElectionProof(ctx, mbi, rbase.Data, round, mr, ki, minerPower)
 	if err != nil || ep.WinCount < 1 {
-		return nil, xerrors.Errorf("MinerMinng getTicketAndElectionProof wincount %v error %v", ep.WinCount, err)
+		return nil, nil, xerrors.Errorf("MinerMinng getTicketAndElectionProof wincount %v error %v", ep.WinCount, err)
 	}
-
 	statOut, err := fa.StateCompute(ctx, curTipset.Height(), parentMsg, curTipset.Key())
 	if err != nil {
-		return nil, xerrors.Errorf("MinerMinng StateCompute error %v", err)
+		return nil, nil, xerrors.Errorf("MinerMinng StateCompute error %v", err)
 	}
 
-	blkStor := util.NsNewMemory()
-	ipfsbs := util.NsNewCborStore(blkStor)
-	recs := make([]cbg.CBORMarshaler, 0)
+	ipfsbs := util.NsNewMemCborStore()
+	arrStor := util.NsMakeEmptyArray(util.NsWrapStore(ctx, ipfsbs))
+	i := 0
 	for _, traMsg := range statOut.Trace {
-		receipt := traMsg.MsgRct
-		recs = append(recs, receipt)
+		if _, ok := mapMsg[traMsg.MsgCid]; ok {
+			log.Warnf("receipt heigth %v cid %v receipt %#v", curTipset.Height(), traMsg.MsgCid, traMsg.MsgRct)
+			err := arrStor.Set(uint64(i), traMsg.MsgRct)
+			if err != nil {
+				return nil, nil, err
+			}
+			i++
+		}
 	}
-	rectroot, err := amt.FromArray(ctx, ipfsbs, recs)
+	rectroot, err := arrStor.Root()
 	if err != nil {
-		return nil, xerrors.Errorf("MinerMinng failed to build receipts amt: %v", err)
+		return nil, nil, xerrors.Errorf("MinerMinng failed to build receipts amt: %v", err)
 	}
 
 	actorID, err := util.NsIDFromAddress(mr)
 	if err != nil {
-		return nil, xerrors.Errorf("MinerMinng NsIDFromAddress miner %v error %v", mr, err)
+		return nil, nil, xerrors.Errorf("MinerMinng NsIDFromAddress miner %v error %v", mr, err)
 	}
 
 	proofType, err := util.NsWinningPoStProofTypeFromWindowPoStProofType(255, util.NsRegisteredPoStProof(mbi.Sectors[0].SealProof))
 	if err != nil {
-		return nil, xerrors.Errorf("MinerMinng determining winning post proof type: %v", err)
+		return nil, nil, xerrors.Errorf("MinerMinng determining winning post proof type: %v", err)
 	}
 
-	wpostProof, err := util.GenerateWinningPoSt(ctx, util.NsActorID(actorID), mbi.Sectors, electionRand, proofType, string(sealedPath))
+	buf := new(bytes.Buffer)
+	if err := mr.MarshalCBOR(buf); err != nil {
+		return nil, nil, xerrors.Errorf("failed to marshal miner address: %w", err)
+	}
+
+	rand, err := util.NsDrawRandomness(rbase.Data, util.NsDomainSeparationTag_WinningPoStChallengeSeed, round, buf.Bytes())
 	if err != nil {
-		return nil, xerrors.Errorf("MinerMinng GenerateWinningPoSt miner %v error %v", mr, err)
+		return nil, nil, xerrors.Errorf("failed to get randomness for winning post: %w", err)
+	}
+
+	prand := util.NsPoStRandomness(rand)
+	wpostProof, err := util.GenerateWinningPoSt(ctx, util.NsActorID(actorID), mbi.Sectors, prand, proofType, string(sealedPath))
+	if err != nil {
+		return nil, nil, xerrors.Errorf("MinerMinng GenerateWinningPoSt miner %v error %v", mr, err)
 	}
 
 	uts := curTipset.MinTimestamp() + util.NsBlockDelaySecs
@@ -154,8 +170,7 @@ func MinerMinng(ctx context.Context, blkh *util.NsBlockHeader, fa util.LotusAPI,
 		ParentStateRoot:       statOut.Root,
 		ParentMessageReceipts: rectroot,
 	}
-
-	return blkHead, nil
+	return blkHead, curTipset, nil
 
 }
 
@@ -169,7 +184,40 @@ func getBaseInfo(ctx context.Context, blkh *util.NsBlockHeader, fa util.LotusAPI
 	return mbi, round, err
 }
 
-func getElectionRand(mr util.NsAddress, rebaseData []byte, round util.NsChainEpoch) ([]byte, error) {
+func getTicketProof(ctx context.Context, rebaseData []byte, round util.NsChainEpoch, mr util.NsAddress, ki *util.Key, pts *util.NsTipSet) (*util.NsTicket, error) {
+	buf := new(bytes.Buffer)
+	if err := mr.MarshalCBOR(buf); err != nil {
+		return nil, err
+	}
+
+	if round > build.UpgradeSmokeHeight {
+		buf.Write(pts.MinTicket().VRFProof)
+	}
+
+	ticketRand, err := util.NsDrawRandomness(rebaseData, util.NsDomainSeparationTag_TicketProduction, round-build.TicketRandomnessLookback, buf.Bytes())
+	if err != nil {
+		return nil, err
+	}
+
+	vrfOut, err := util.NsComputeVRF(ctx, func(ctx context.Context, addr util.NsAddress, data []byte) (*util.NsSignature, error) {
+		sigture, err := util.SignMsg(ki.NsKeyInfo, ticketRand)
+		if err != nil {
+			return nil, err
+		}
+		return sigture, nil
+	}, ki.Address, ticketRand)
+	if err != nil {
+		return nil, err
+	}
+
+	ticket := &util.NsTicket{
+		VRFProof: vrfOut,
+	}
+	return ticket, nil
+}
+
+func getElectionProof(ctx context.Context, mbi *util.NsMiningBaseInfo, rebaseData []byte, round util.NsChainEpoch, mr util.NsAddress, ki *util.Key, minerPower util.Nsbig) (*util.NsElectionProof, error) {
+
 	buf := new(bytes.Buffer)
 	if err := mr.MarshalCBOR(buf); err != nil {
 		return nil, err
@@ -179,10 +227,6 @@ func getElectionRand(mr util.NsAddress, rebaseData []byte, round util.NsChainEpo
 	if err != nil {
 		return nil, err
 	}
-	return electionRand, nil
-}
-
-func getTicketAndElectionProof(ctx context.Context, mbi *util.NsMiningBaseInfo, electionRand []byte, mr util.NsAddress, round util.NsChainEpoch, ki *util.Key, minerPower util.Nsbig) (*util.NsTicket, *util.NsElectionProof, error) {
 
 	vrfout, err := util.NsComputeVRF(ctx, func(ctx context.Context, addr util.NsAddress, data []byte) (*util.NsSignature, error) {
 		sigture, err := util.SignMsg(ki.NsKeyInfo, electionRand)
@@ -190,9 +234,9 @@ func getTicketAndElectionProof(ctx context.Context, mbi *util.NsMiningBaseInfo, 
 			return nil, err
 		}
 		return sigture, nil
-	}, util.NsAddress{}, nil)
+	}, ki.Address, electionRand)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 
 	ep := &util.NsElectionProof{VRFProof: vrfout}
@@ -200,13 +244,10 @@ func getTicketAndElectionProof(ctx context.Context, mbi *util.NsMiningBaseInfo, 
 	ep.WinCount = j
 	log.Infof("wwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwww round %v curPower %v NetworkPower %v sectors %v count %d", round, minerPower, mbi.NetworkPower, mbi.Sectors, ep.WinCount)
 
-	ticket := &util.NsTicket{
-		VRFProof: vrfout,
-	}
-	return ticket, ep, nil
+	return ep, nil
 }
 
-func publishBlockMsg(ctx context.Context, fa util.LotusAPI, blkHead *util.NsBlockHeader, msgs []*util.NsSignedMessage, ki *util.Key, pub *pubsub.PubSub, topic string) error {
+func publishBlockMsg(ctx context.Context, fa util.LotusAPI, blkHead *util.NsBlockHeader, msgs []*util.NsSignedMessage, pmsg []*util.NsMessage, curts *util.NsTipSet, ki *util.Key, pub *pubsub.PubSub, topic string) error {
 	var blk util.NsBlockMsg
 	var blsSigs []util.NsSignature
 
@@ -246,12 +287,11 @@ func publishBlockMsg(ctx context.Context, fa util.LotusAPI, blkHead *util.NsBloc
 	}
 	blkHead.ParentWeight = parentWeight
 
-	// baseFee, err := util.NsComputeBaseFee(ctx, fa, curTipset)
-	// if err != nil {
-	// 	return err
-	// }
-	// blkHead.ParentBaseFee = baseFee
-	blkHead.ParentBaseFee = util.NsNewInt(100)
+	totalLimit := int64(0)
+	for _, m := range pmsg {
+		totalLimit += m.GasLimit
+	}
+	blkHead.ParentBaseFee = util.NsComputeNextBaseFee(curts.Blocks()[0].ParentBaseFee, totalLimit, len(curts.Blocks()), curts.Height())
 
 	aggSig, err := util.NsaggregateSignatures(blsSigs)
 	if err != nil {
@@ -286,11 +326,8 @@ func publishBlockMsg(ctx context.Context, fa util.LotusAPI, blkHead *util.NsBloc
 	return nil
 }
 
-func GenerateWinningFallbackSectorChallenges(mr util.NsAddress, rebaseData []byte, round util.NsChainEpoch, mbi *util.NsMiningBaseInfo) (*util.NsFallbackChallenges, error) {
-	rand, err := getElectionRand(mr, rebaseData, round)
-	if err != nil {
-		return nil, err
-	}
+func GenerateWinningFallbackSectorChallenges(mr util.NsAddress, rebaseData []byte, round util.NsChainEpoch, mbi *util.NsMiningBaseInfo, pts *util.NsTipSet) (*util.NsFallbackChallenges, error) {
+
 	proofType, err := util.NsWinningPoStProofTypeFromWindowPoStProofType(255, util.NsRegisteredPoStProof(mbi.Sectors[0].SealProof))
 	if err != nil {
 		return nil, err
@@ -300,7 +337,7 @@ func GenerateWinningFallbackSectorChallenges(mr util.NsAddress, rebaseData []byt
 	for i, s := range mbi.Sectors {
 		sectorIds[i] = s.SectorNumber
 	}
-	return util.NsGeneratePoStFallbackSectorChallenges(proofType, util.NsActorID(actorID), rand, sectorIds)
+	return util.NsGeneratePoStFallbackSectorChallenges(proofType, util.NsActorID(actorID), nil, sectorIds)
 }
 
 func GenerateSingleWinningVanillaProof(
@@ -309,12 +346,13 @@ func GenerateSingleWinningVanillaProof(
 	poStProofType util.NsRegisteredPoStProof,
 	rebaseData []byte, round util.NsChainEpoch,
 	mbi *util.NsMiningBaseInfo,
+	pts *util.NsTipSet,
 ) (map[util.NsSectorNum][]byte, error) {
 	actorID, err := util.NsIDFromAddress(mr)
 	if err != nil {
 		return nil, err
 	}
-	challages, err := GenerateWinningFallbackSectorChallenges(mr, rebaseData, round, mbi)
+	challages, err := GenerateWinningFallbackSectorChallenges(mr, rebaseData, round, mbi, pts)
 	if err != nil {
 		return nil, err
 	}

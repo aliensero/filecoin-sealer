@@ -27,6 +27,7 @@ func main() {
 		daemonCmd,
 		p2p.SubCmd,
 		p2p.TranCmd,
+		p2p.ComputeReceis,
 	}
 
 	app := cli.App{

@@ -11,19 +11,9 @@ import (
 )
 
 const (
-	PUSHURL = "http://wxpusher.zjiecode.com/api/send/message"
-)
-
-const (
 	POST = iota
 	GET
 )
-
-var Uids []string
-
-func init() {
-	Uids = []string{"UID_KXOyMQ3PJxppUokEwjDB6l58waU5"}
-}
 
 type PostMessage struct {
 	AppToken    string   `json:"appToken"`
@@ -40,8 +30,8 @@ func WxPush(msg PostMessage) error {
 			log.Errorf("WxPush panic error %v", err)
 		}
 	}()
-	msg.AppToken = "AT_AyXYYutY6gvrlgWkTfKlVipBkVQPRrh2"
-	msg.Uids = Uids
+	msg.AppToken = PUSHTOKEN
+	msg.Uids = UIDS
 	msg.ContentType = 1
 	msgbuf, err := json.Marshal(msg)
 	if err != nil {

@@ -294,20 +294,20 @@ var handleFuncMap = map[string]func(http.ResponseWriter,
 			resp.Write([]byte("?uid=UID_xxxx"))
 			return
 		}
-		push.Uids = append(push.Uids, keys[0])
+		push.UIDS = append(push.UIDS, keys[0])
 		resp.Write([]byte(keys[0]))
 	},
 	"resetuids": func(resp http.ResponseWriter, req *http.Request) {
-		push.Uids = push.Uids[:1]
+		push.UIDS = push.UIDS[:1]
 		ret := ""
-		for _, u := range push.Uids {
+		for _, u := range push.UIDS {
 			ret += u + ","
 		}
 		resp.Write([]byte(ret))
 	},
 	"displayuids": func(resp http.ResponseWriter, req *http.Request) {
 		ret := ""
-		for _, u := range push.Uids {
+		for _, u := range push.UIDS {
 			ret += u + ","
 		}
 		resp.Write([]byte(ret))
@@ -363,15 +363,15 @@ func (ah *apiHandle) DisplayNotifyAddr() ([]string, error) {
 }
 
 func (ah *apiHandle) AppendUids(uid string) (string, error) {
-	push.Uids = append(push.Uids, uid)
+	push.UIDS = append(push.UIDS, uid)
 	return uid, nil
 }
 
 func (ah *apiHandle) ClearUids() error {
-	push.Uids = push.Uids[:1]
+	push.UIDS = push.UIDS[:1]
 	return nil
 }
 
 func (ah *apiHandle) DisplayUids() ([]string, error) {
-	return push.Uids, nil
+	return push.UIDS, nil
 }
