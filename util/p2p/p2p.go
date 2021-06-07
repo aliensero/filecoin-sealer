@@ -3,6 +3,9 @@ package up2p
 import (
 	"context"
 	"io"
+	"io/ioutil"
+	"os"
+	"strings"
 	"time"
 
 	"github.com/filecoin-project/go-address"
@@ -65,6 +68,9 @@ func CreateRepo(path string) (*repo.FsRepo, error) {
 var NsFullNode = repo.FullNode
 var NsNodeNew = node.New
 var NsOverride = node.Override
+var NsApplyIf = node.ApplyIf
+
+type NsSettings = node.Settings
 
 func Repo(r repo.Repo) node.Option {
 	return func(settings *node.Settings) error {
@@ -110,10 +116,42 @@ func Repo(r repo.Repo) node.Option {
 	}
 }
 
+func blackPeers(ps *pubsub.PubSub, h host.Host) {
+	if listPath, ok := os.LookupEnv("BLACK_LIST_PATH"); ok {
+		f, err := os.Open(listPath)
+		if err != nil {
+			log.Errorf("open black list path %v error %v", listPath, err)
+			return
+		}
+		buf, err := ioutil.ReadAll(f)
+		if err != nil {
+			log.Errorf("read black list path %v error %v", listPath, err)
+			return
+		}
+		bls := strings.Split(string(buf), "\n")
+		log.Infof("black peers %v", bls)
+		for _, bl := range bls {
+			if strings.Trim(bl, " ") == "" {
+				continue
+			}
+			badp, err := peer.Decode(bl)
+			if err != nil {
+				log.Errorf("Decode black peer %v error %v", bl, err)
+				continue
+			}
+			ps.BlacklistPeer(badp)
+			h.ConnManager().TagPeer(badp, "badblock", -1000)
+		}
+	}
+}
+
 var ChainSwapOpt = node.Options(
 	node.LibP2P,
 	node.Override(new(*peermgr.PeerMgr), peermgr.NewPeerMgr),
-	node.Override(node.RunPeerMgrKey, modules.RunPeerMgr),
+	node.Override(node.RunPeerMgrKey, func(mctx helpers.MetricsCtx, lc fx.Lifecycle, pmgr *peermgr.PeerMgr, ps *pubsub.PubSub, h host.Host) {
+		blackPeers(ps, h)
+		modules.RunPeerMgr(mctx, lc, pmgr)
+	}),
 	node.Override(new(dtypes.NetworkName), func() dtypes.NetworkName {
 		return NATNAME
 	}),
@@ -144,10 +182,10 @@ var ChainSwapOpt = node.Options(
 	node.Override(node.HandleIncomingBlocksKey, HandleIncomingBlocks),
 )
 
-func HandleIncomingBlocks(mctx helpers.MetricsCtx, lc fx.Lifecycle, ps *pubsub.PubSub, h host.Host, nn dtypes.NetworkName, bs dtypes.ChainBlockService, cbs blockstore.Blockstore, fa api.FullNode, ki *util.Key, actorID address.Address, sp SealedPath, mp *Mpool) {
+func HandleIncomingBlocks(mctx helpers.MetricsCtx, lc fx.Lifecycle, ps *pubsub.PubSub, h host.Host, nn dtypes.NetworkName, bs dtypes.ChainBlockService, cbs blockstore.Blockstore, fa api.FullNode, ki *util.Key, actorID address.Address, sp SealedPath, mp *Mpool, pem *peermgr.PeerMgr) {
 	ctx := helpers.LifecycleCtx(mctx, lc)
 	topic := build.BlocksTopic(nn)
-	if err := ps.RegisterTopicValidator(topic, checkBlockMessage(h)); err != nil {
+	if err := ps.RegisterTopicValidator(topic, checkBlockMessage(h, pem)); err != nil {
 		panic(err)
 	}
 
@@ -261,7 +299,7 @@ func miningServer(ctx context.Context, cbs blockstore.Blockstore, bs dtypes.Chai
 	}
 }
 
-func checkBlockMessage(h host.Host) func(ctx context.Context, pid peer.ID, msg *pubsub.Message) pubsub.ValidationResult {
+func checkBlockMessage(h host.Host, pem *peermgr.PeerMgr) func(ctx context.Context, pid peer.ID, msg *pubsub.Message) pubsub.ValidationResult {
 	return func(ctx context.Context, pid peer.ID, msg *pubsub.Message) pubsub.ValidationResult {
 		blk, err := types.DecodeBlockMsg(msg.GetData())
 		if err != nil {
@@ -272,6 +310,7 @@ func checkBlockMessage(h host.Host) func(ctx context.Context, pid peer.ID, msg *
 		msg.ValidatorData = blk
 		h.Network().ConnsToPeer(msg.ReceivedFrom)
 		log.Infof("conns %v", len(h.Network().Conns()))
+		pem.AddFilecoinPeer(pid)
 		return pubsub.ValidationAccept
 	}
 }

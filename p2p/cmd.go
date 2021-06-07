@@ -37,6 +37,10 @@ var SubCmd = &cli.Command{
 			Usage: "RPC server listen",
 			Value: "127.0.0.1:4321",
 		},
+		&cli.StringFlag{
+			Name:  "sealedpath",
+			Usage: "storage path",
+		},
 	},
 	Action: func(cctx *cli.Context) error {
 		ctx := cctx.Context
@@ -56,6 +60,7 @@ var SubCmd = &cli.Command{
 				return util.NsNewIDAddress(cctx.Uint64("actorid"))
 			}),
 			up2p.NsOverride(new(up2p.Faddr), up2p.Faddr(cctx.String("listen"))),
+			up2p.NsApplyIf(func(s *up2p.NsSettings) bool { return cctx.IsSet("sealeapath") }, up2p.NsOverride(new(up2p.SealedPath), up2p.SealedPath(cctx.String("sealedPath")))),
 		)
 		if err != nil {
 			return err

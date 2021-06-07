@@ -155,8 +155,6 @@ func MinerMinng(ctx context.Context, blkh *util.NsBlockHeader, fa util.LotusAPI,
 	}
 
 	uts := curTipset.MinTimestamp() + util.NsBlockDelaySecs
-	af := time.After(time.Duration(int64(uts)-time.Now().Unix()) * time.Second)
-	<-af
 	blkHead := &util.NsBlockHeader{
 		Miner:         mr,
 		Parents:       curTipset.Key().Cids(),
@@ -315,11 +313,17 @@ func publishBlockMsg(ctx context.Context, fa util.LotusAPI, blkHead *util.NsBloc
 	if err != nil {
 		return err
 	}
+
+	waitPublish := time.Duration(blkHead.Timestamp-uint64(time.Now().Unix())) * time.Second
+	af := time.After(waitPublish)
+	<-af
+
 	err = pub.Publish(topic, b)
 	if err != nil {
 		return err
 	}
-	log.Infof("publishBlockMsg cid %v ParentStateRoot %v ParentMessageReceipts %v ParentBaseFee %v len(msgs) %v", blk.Cid(), blkHead.ParentStateRoot, blkHead.ParentMessageReceipts, blkHead.ParentBaseFee, len(msgs))
+
+	log.Infof("publishBlockMsg cid %v ParentStateRoot %v ParentMessageReceipts %v ParentBaseFee %v len(msgs) %v waitPublish %v", blk.Cid(), blkHead.ParentStateRoot, blkHead.ParentMessageReceipts, blkHead.ParentBaseFee, len(msgs), waitPublish)
 	for _, msg := range msgs {
 		log.Infof("msg cid %v", msg.Cid())
 	}
