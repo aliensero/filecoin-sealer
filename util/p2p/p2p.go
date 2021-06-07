@@ -10,7 +10,6 @@ import (
 
 	"github.com/filecoin-project/go-address"
 	"github.com/filecoin-project/go-state-types/abi"
-	"github.com/filecoin-project/go-state-types/crypto"
 	"github.com/filecoin-project/lotus/api"
 	"github.com/filecoin-project/lotus/api/client"
 	"github.com/filecoin-project/lotus/blockstore"
@@ -228,9 +227,9 @@ func miningServer(ctx context.Context, cbs blockstore.Blockstore, bs dtypes.Chai
 	for {
 		parentMsg := make([]*types.Message, 0)
 		mapMsg := make(map[util.NsCid]*util.NsMessage)
-		af := time.After(15 * time.Second)
+		delay := 15 * time.Second
+		tt := time.NewTimer(delay)
 		var h *types.BlockHeader
-		start := build.Clock.Now()
 	loop:
 		for {
 			select {
@@ -240,6 +239,7 @@ func miningServer(ctx context.Context, cbs blockstore.Blockstore, bs dtypes.Chai
 					if !ok {
 						log.Warnf("pubsub block validator passed on wrong type: %#v", pm.ValidatorData)
 					} else {
+						tt.Reset(delay)
 						h = blk.Header
 					}
 				}
@@ -255,44 +255,33 @@ func miningServer(ctx context.Context, cbs blockstore.Blockstore, bs dtypes.Chai
 					}
 				}
 
-			case <-af:
+			case <-tt.C:
 				break loop
 			}
 		}
-		took := build.Clock.Since(start)
-		if took > 26*time.Second {
-			log.Errorf("fetch parent message timeout,took %v", took)
+
+		if h == nil {
 			continue
 		}
-		msgs := mp.Msgs
+
+		if uint64(build.Clock.Now().Unix())-h.Timestamp >= build.BlockDelaySecs {
+			log.Warnf("fetch message delay")
+			continue
+		}
+
+		// msgs := mp.Msgs
 		go func() {
 			defer mp.ClearMsg()
-			if h == nil {
-				return
-			}
-			bh, curts, err := MinerMinng(ctx, h, fa, mr, ki, sealedPath, parentMsg, mapMsg)
+			mret, err := MinerMinng(ctx, h, fa, mr, ki, sealedPath, parentMsg, mapMsg)
 			if err != nil {
 				log.Errorf("MiningCallBackFun error %v", err)
 				return
 			}
-			err = publishBlockMsg(ctx, fa, bh, msgs, parentMsg, curts, ki, pub, topic)
+
+			// err = publishBlockMsg(ctx, fa, bh, cbs, msgs, parentMsg, curts, ki, pub, topic)
+			err = publishBlockMsg(ctx, fa, mret, cbs, parentMsg, ki, pub, topic)
 			if err != nil {
 				log.Errorf("publishBlockMsg error %v", err)
-				return
-			}
-			bmsgs := make([]*types.Message, 0)
-			smsgs := make([]*types.SignedMessage, 0)
-			for _, msg := range msgs {
-				cm := *msg
-				if msg.Signature.Type == crypto.SigTypeBLS {
-					bmsgs = append(bmsgs, &cm.Message)
-				} else {
-					smsgs = append(smsgs, &cm)
-				}
-			}
-			err = SaveBlock(ctx, cbs, bmsgs, smsgs, bh)
-			if err != nil {
-				log.Errorf("SaveBlock error %v", err)
 				return
 			}
 		}()

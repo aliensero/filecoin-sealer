@@ -200,6 +200,8 @@ type NsBlockTemplate = api.BlockTemplate
 var NsNewAPIBlockstore = blockstore.NewAPIBlockstore
 var NsNewMemory = blockstore.NewMemory
 
+type NsBlockstore = blockstore.Blockstore
+
 var NsCurrentNetwork = address.CurrentNetwork
 var NsMainNet = address.Mainnet
 
