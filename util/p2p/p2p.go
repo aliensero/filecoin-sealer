@@ -182,9 +182,12 @@ var ChainSwapOpt = node.Options(
 )
 
 func HandleIncomingBlocks(mctx helpers.MetricsCtx, lc fx.Lifecycle, ps *pubsub.PubSub, h host.Host, nn dtypes.NetworkName, bs dtypes.ChainBlockService, cbs blockstore.Blockstore, fa api.FullNode, ki *util.Key, actorID address.Address, sp SealedPath, mp *Mpool, pem *peermgr.PeerMgr) {
+
 	ctx := helpers.LifecycleCtx(mctx, lc)
+	curHeight := abi.ChainEpoch(0)
+
 	topic := build.BlocksTopic(nn)
-	if err := ps.RegisterTopicValidator(topic, checkBlockMessage(h, pem)); err != nil {
+	if err := ps.RegisterTopicValidator(topic, checkBlockMessage(h, pem, &curHeight)); err != nil {
 		panic(err)
 	}
 
@@ -197,7 +200,6 @@ func HandleIncomingBlocks(mctx helpers.MetricsCtx, lc fx.Lifecycle, ps *pubsub.P
 	subChan := make(chan *pubsub.Message, 10)
 	go miningServer(ctx, cbs, bs, subChan, fa, actorID, ki, sp, mp, ps, topic)
 
-	curHeight := abi.ChainEpoch(0)
 	for {
 		msg, err := blocksub.Next(ctx)
 		if err != nil {
@@ -224,35 +226,77 @@ func HandleIncomingBlocks(mctx helpers.MetricsCtx, lc fx.Lifecycle, ps *pubsub.P
 }
 
 func miningServer(ctx context.Context, cbs blockstore.Blockstore, bs dtypes.ChainBlockService, pms chan *pubsub.Message, fa util.LotusAPI, mr util.NsAddress, ki *util.Key, sealedPath SealedPath, mp *Mpool, pub *pubsub.PubSub, topic string) {
+	delay := time.Duration(build.BlockDelaySecs) * time.Second
+	lastHeight := abi.ChainEpoch(0)
 	for {
-		parentMsg := make([]*types.Message, 0)
 		mapMsg := make(map[util.NsCid]*util.NsMessage)
-		delay := 15 * time.Second
+		mapHead := make(map[util.NsCid][]cid.Cid)
 		tt := time.NewTimer(delay)
 		var h *types.BlockHeader
 	loop:
 		for {
 			select {
 			case pm := <-pms:
-				if h == nil {
-					blk, ok := pm.ValidatorData.(*types.BlockMsg)
-					if !ok {
-						log.Warnf("pubsub block validator passed on wrong type: %#v", pm.ValidatorData)
-					} else {
-						tt.Reset(delay)
+
+				if blk, ok := pm.ValidatorData.(*types.BlockMsg); ok {
+
+					if lastHeight >= blk.Header.Height {
+						continue
+					}
+
+					if h != nil && blk.Header.Height > h.Height {
+						pms <- pm
+						break loop
+					}
+
+					if h == nil {
 						h = blk.Header
+						tt.Reset(delay / 3)
 					}
-				}
-				rs, err := fetchMessage(ctx, cbs, bs, pm)
-				if err != nil {
-					log.Errorf("fetchMessage error %v", cbs, err)
-					break loop
-				}
-				for _, r := range rs {
-					if _, ok := mapMsg[r.Cid()]; !ok {
-						parentMsg = append(parentMsg, r)
-						mapMsg[r.Cid()] = r
-					}
+
+					// if _, ok := mapHead[blk.Cid()]; !ok {
+					// 	cidS := append(blk.BlsMessages, blk.SecpkMessages...)
+					// 	mapHead[blk.Cid()] = cidS
+					// 	for _, c := range cidS {
+					// 		if _, ok := mapMsg[c]; !ok {
+					// 			var err error
+					// 			var s *types.Message
+					// 			bf, err := mp.Cache.Get(c)
+					// 			if err != nil {
+					// 				log.Warnf("mpool get bls message %v error %v", c, err)
+					// 			} else {
+					// 				s, err = types.DecodeMessage(bf.([]byte))
+					// 				if err != nil {
+					// 					log.Warnf("mpool DecodeSignedMessage bls message %v error %v", c, err)
+					// 				}
+					// 			}
+					// 			// if err != nil {
+					// 			// 	ss, terr := FetchSigMsgByCid(ctx, cbs, bs, c)
+					// 			// 	if terr != nil || len(ss) == 0 {
+					// 			// 		ss, terr := FetchMsgByCid(ctx, cbs, bs, c)
+					// 			// 		if terr != nil {
+					// 			// 			err = xerrors.Errorf("FetchSigMsgByCid cid %v len %v error %v", c, len(ss), terr)
+					// 			// 		} else {
+					// 			// 			s = ss[0]
+					// 			// 		}
+					// 			// 	} else {
+					// 			// 		err = nil
+					// 			// 		s = &ss[0].Message
+					// 			// 		buf, terr := s.Serialize()
+					// 			// 		if terr == nil {
+					// 			// 			mp.Cache.Set(c, buf)
+					// 			// 		}
+					// 			// 	}
+					// 			// }
+					// 			if err != nil {
+					// 				log.Errorf("mpool get message %v error %v", c, err)
+					// 				delete(mapHead, blk.Cid())
+					// 				break loop
+					// 			}
+					// 			mapMsg[c] = s
+					// 		}
+					// 	}
+					// }
 				}
 
 			case <-tt.C:
@@ -263,32 +307,31 @@ func miningServer(ctx context.Context, cbs blockstore.Blockstore, bs dtypes.Chai
 		if h == nil {
 			continue
 		}
+		lastHeight = h.Height
 
 		if uint64(build.Clock.Now().Unix())-h.Timestamp >= build.BlockDelaySecs {
 			log.Warnf("fetch message delay")
 			continue
 		}
 
-		// msgs := mp.Msgs
 		go func() {
-			defer mp.ClearMsg()
-			mret, err := MinerMinng(ctx, h, fa, mr, ki, sealedPath, parentMsg, mapMsg)
+			_, err := MinerMining(ctx, h, mapHead, fa, mr, ki, sealedPath, mapMsg, func(parentMsg []*util.NsMessage, mret *MiningResult) error {
+				err := publishBlockMsg(ctx, fa, mret, cbs, parentMsg, ki, pub, topic)
+				if err != nil {
+					log.Errorf("publishBlockMsg error %v", err)
+					return err
+				}
+				return nil
+			})
 			if err != nil {
 				log.Errorf("MiningCallBackFun error %v", err)
-				return
-			}
-
-			// err = publishBlockMsg(ctx, fa, bh, cbs, msgs, parentMsg, curts, ki, pub, topic)
-			err = publishBlockMsg(ctx, fa, mret, cbs, parentMsg, ki, pub, topic)
-			if err != nil {
-				log.Errorf("publishBlockMsg error %v", err)
 				return
 			}
 		}()
 	}
 }
 
-func checkBlockMessage(h host.Host, pem *peermgr.PeerMgr) func(ctx context.Context, pid peer.ID, msg *pubsub.Message) pubsub.ValidationResult {
+func checkBlockMessage(h host.Host, pem *peermgr.PeerMgr, curHeight *abi.ChainEpoch) func(ctx context.Context, pid peer.ID, msg *pubsub.Message) pubsub.ValidationResult {
 	return func(ctx context.Context, pid peer.ID, msg *pubsub.Message) pubsub.ValidationResult {
 		blk, err := types.DecodeBlockMsg(msg.GetData())
 		if err != nil {
@@ -300,6 +343,9 @@ func checkBlockMessage(h host.Host, pem *peermgr.PeerMgr) func(ctx context.Conte
 		h.Network().ConnsToPeer(msg.ReceivedFrom)
 		log.Infof("conns %v", len(h.Network().Conns()))
 		pem.AddFilecoinPeer(pid)
+		if blk.Header.Height >= *curHeight {
+			h.ConnManager().TagPeer(pid, "new-block", 40)
+		}
 		return pubsub.ValidationAccept
 	}
 }

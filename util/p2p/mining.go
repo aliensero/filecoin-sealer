@@ -9,6 +9,7 @@ import (
 
 	"gitlab.ns/lotus-worker/util"
 
+	"github.com/bluele/gcache"
 	"github.com/filecoin-project/lotus/build"
 	"github.com/filecoin-project/lotus/lib/peermgr"
 	"github.com/libp2p/go-libp2p-core/peer"
@@ -16,20 +17,16 @@ import (
 	"golang.org/x/xerrors"
 )
 
+var MpoolCacheSize = 65535
+
 type Mpool struct {
-	Msgs []*util.NsSignedMessage
-}
-
-func (mp *Mpool) AppendMsg(m *util.NsSignedMessage) {
-	mp.Msgs = append(mp.Msgs, m)
-}
-
-func (mp *Mpool) ClearMsg() {
-	mp.Msgs = []*util.NsSignedMessage{}
+	Msgs  []*util.NsSignedMessage
+	Cache gcache.Cache
 }
 
 func NewMpool(ps *pubsub.PubSub, nn util.NsNetworkName, pem *peermgr.PeerMgr) *Mpool {
 	mp := &Mpool{}
+	mp.Cache = gcache.New(MpoolCacheSize).LRU().Build()
 	go func() {
 		msgTopic := util.NsMessageTopic(nn)
 		ps.RegisterTopicValidator(msgTopic, func(ctx context.Context, pid peer.ID, msg *pubsub.Message) pubsub.ValidationResult {
@@ -57,7 +54,16 @@ func NewMpool(ps *pubsub.PubSub, nn util.NsNetworkName, pem *peermgr.PeerMgr) *M
 				sm, ok := msg.ValidatorData.(*util.NsSignedMessage)
 				log.Infof("block NsSignedMessage ok? %v", ok)
 				if ok {
-					mp.AppendMsg(sm)
+					sb, err := sm.Message.Serialize()
+					if err != nil {
+						log.Warnf("signed message serialize error %v", err)
+						continue
+					}
+					err = mp.Cache.Set(sm.Cid(), sb)
+					if err != nil {
+						log.Warnf("signed message cid %v set cache error %v", err)
+						continue
+					}
 				}
 			}
 		}
@@ -74,23 +80,63 @@ type MiningResult struct {
 	Ticket      *util.NsTicket
 }
 
-func MinerMinng(ctx context.Context, blkh *util.NsBlockHeader, fa util.LotusAPI, mr util.NsAddress, ki *util.Key, sealedPath SealedPath, parentMsg []*util.NsMessage, mapMsg map[util.NsCid]*util.NsMessage) (*MiningResult, error) {
+func MinerMining(ctx context.Context, blkh *util.NsBlockHeader, mapHead map[util.NsCid][]util.NsCid, fa util.LotusAPI, mr util.NsAddress, ki *util.Key, sealedPath SealedPath, mapMsg map[util.NsCid]*util.NsMessage, cb publishBlockMsgCb) (*MiningResult, error) {
 	curTipset, err := fa.ChainHead(ctx)
+	bheight := blkh.Height
 	for {
 		if err != nil {
-			return nil, xerrors.Errorf("MinerMinng ChainHead error %v", err)
+			return nil, xerrors.Errorf("MinerMining ChainHead error %v", err)
 		}
-		if curTipset.Height() == blkh.Height {
+		if curTipset.Height() == bheight {
 			break
 		}
-		if curTipset.Height() > blkh.Height {
-			return nil, xerrors.Errorf("MinerMinng ChainHead curTipset.Height(%v) > blkh.Height(%v)", curTipset.Height(), blkh.Height)
+		if curTipset.Height() > bheight {
+			return nil, xerrors.Errorf("MinerMining ChainHead curTipset.Height(%v) > blkh.Height(%v)", curTipset.Height(), bheight)
 		}
 		curTipset, err = fa.ChainHead(ctx)
 	}
+
+	var parentMsg []*util.NsMessage
+	// for _, h := range curTipset.Blocks() {
+	// 	if cidS, ok := mapHead[h.Cid()]; ok {
+	// 		tmapmsg := make(map[util.NsCid]*util.NsMessage)
+	// 		for _, c := range cidS {
+	// 			if m, ok := mapMsg[c]; !ok {
+	// 				return nil, xerrors.Errorf("mapMsg not containt message %v", c)
+	// 			} else {
+	// 				if _, ok := tmapmsg[c]; !ok {
+	// 					parentMsg = append(parentMsg, m)
+	// 					tmapmsg[c] = m
+	// 				}
+	// 			}
+	// 		}
+	// 	}
+	// }
+	mapMsg = make(map[util.NsCid]*util.NsMessage)
+	for _, h := range curTipset.Blocks() {
+		bms, err := fa.ChainGetBlockMessages(ctx, h.Cid())
+		if err != nil {
+			return nil, err
+		}
+		for _, m := range bms.BlsMessages {
+			cm := m
+			if _, ok := mapMsg[m.Cid()]; !ok {
+				mapMsg[m.Cid()] = cm
+				parentMsg = append(parentMsg, cm)
+			}
+		}
+		for _, m := range bms.SecpkMessages {
+			cm := m
+			if _, ok := mapMsg[m.Message.Cid()]; !ok {
+				mapMsg[m.Message.Cid()] = &cm.Message
+				parentMsg = append(parentMsg, &cm.Message)
+			}
+		}
+	}
+
 	mbi, round, err := getBaseInfo(ctx, blkh, fa, mr, curTipset)
 	if err != nil || mbi == nil {
-		return nil, xerrors.Errorf("MinerMinng get miner %v info mbi == nil %v error %v", mr, mbi == nil, err)
+		return nil, xerrors.Errorf("MinerMining get miner %v info mbi == nil %v error %v", mr, mbi == nil, err)
 	}
 
 	log.Infof("Time delta between now and our mining base: %ds", uint64(build.Clock.Now().Unix())-curTipset.MinTimestamp())
@@ -103,17 +149,17 @@ func MinerMinng(ctx context.Context, blkh *util.NsBlockHeader, fa util.LotusAPI,
 
 	ticket, err := getTicketProof(ctx, rbase.Data, round, mr, ki, curTipset)
 	if err != nil {
-		return nil, xerrors.Errorf("MinerMinng failed to draw randomness: %v", err)
+		return nil, xerrors.Errorf("MinerMining failed to draw randomness: %v", err)
 	}
 
 	minerPower := mbi.MinerPower
 	ep, err := getElectionProof(ctx, mbi, rbase.Data, round, mr, ki, minerPower)
 	if err != nil || ep.WinCount < 1 {
-		return nil, xerrors.Errorf("MinerMinng getTicketAndElectionProof wincount %v error %v", ep.WinCount, err)
+		return nil, xerrors.Errorf("MinerMining getTicketAndElectionProof wincount %v error %v", ep.WinCount, err)
 	}
 	statOut, err := fa.StateCompute(ctx, curTipset.Height(), parentMsg, curTipset.Key())
 	if err != nil {
-		return nil, xerrors.Errorf("MinerMinng StateCompute error %v", err)
+		return nil, xerrors.Errorf("MinerMining StateCompute error %v", err)
 	}
 
 	ipfsbs := util.NsNewMemCborStore()
@@ -121,7 +167,7 @@ func MinerMinng(ctx context.Context, blkh *util.NsBlockHeader, fa util.LotusAPI,
 	i := 0
 	for _, traMsg := range statOut.Trace {
 		if _, ok := mapMsg[traMsg.MsgCid]; ok {
-			log.Warnf("receipt heigth %v cid %v receipt %#v", curTipset.Height(), traMsg.MsgCid, traMsg.MsgRct)
+			log.Warnf("receipt height %v cid %v receipt %#v", curTipset.Height(), traMsg.MsgCid, traMsg.MsgRct)
 			err := arrStor.Set(uint64(i), traMsg.MsgRct)
 			if err != nil {
 				return nil, err
@@ -131,17 +177,17 @@ func MinerMinng(ctx context.Context, blkh *util.NsBlockHeader, fa util.LotusAPI,
 	}
 	rectroot, err := arrStor.Root()
 	if err != nil {
-		return nil, xerrors.Errorf("MinerMinng failed to build receipts amt: %v", err)
+		return nil, xerrors.Errorf("MinerMining failed to build receipts amt: %v", err)
 	}
 
 	actorID, err := util.NsIDFromAddress(mr)
 	if err != nil {
-		return nil, xerrors.Errorf("MinerMinng NsIDFromAddress miner %v error %v", mr, err)
+		return nil, xerrors.Errorf("MinerMining NsIDFromAddress miner %v error %v", mr, err)
 	}
 
 	proofType, err := util.NsWinningPoStProofTypeFromWindowPoStProofType(255, util.NsRegisteredPoStProof(mbi.Sectors[0].SealProof))
 	if err != nil {
-		return nil, xerrors.Errorf("MinerMinng determining winning post proof type: %v", err)
+		return nil, xerrors.Errorf("MinerMining determining winning post proof type: %v", err)
 	}
 
 	buf := new(bytes.Buffer)
@@ -157,7 +203,7 @@ func MinerMinng(ctx context.Context, blkh *util.NsBlockHeader, fa util.LotusAPI,
 	prand := util.NsPoStRandomness(rand)
 	wpostProof, err := util.GenerateWinningPoSt(ctx, util.NsActorID(actorID), mbi.Sectors, prand, proofType, string(sealedPath))
 	if err != nil {
-		return nil, xerrors.Errorf("MinerMinng GenerateWinningPoSt miner %v error %v", mr, err)
+		return nil, xerrors.Errorf("MinerMining GenerateWinningPoSt miner %v error %v", mr, err)
 	}
 
 	uts := curTipset.MinTimestamp() + util.NsBlockDelaySecs
@@ -175,7 +221,12 @@ func MinerMinng(ctx context.Context, blkh *util.NsBlockHeader, fa util.LotusAPI,
 		ParentMessageReceipts: rectroot,
 	}
 
-	return &MiningResult{blkHead, curTipset, ticket}, nil
+	ret := &MiningResult{blkHead, curTipset, ticket}
+	if cb != nil {
+		err = cb(parentMsg, ret)
+		return nil, err
+	}
+	return ret, nil
 
 }
 
@@ -251,6 +302,8 @@ func getElectionProof(ctx context.Context, mbi *util.NsMiningBaseInfo, rebaseDat
 
 	return ep, nil
 }
+
+type publishBlockMsgCb func(pmsg []*util.NsMessage, miningRet *MiningResult) error
 
 func publishBlockMsg(ctx context.Context, fa util.LotusAPI, miningRet *MiningResult, cbs util.NsBlockstore, pmsg []*util.NsMessage, ki *util.Key, pub *pubsub.PubSub, topic string) error {
 
@@ -345,7 +398,7 @@ func publishBlockMsg(ctx context.Context, fa util.LotusAPI, miningRet *MiningRes
 		return err
 	}
 
-	deadline := blk.Header.Timestamp - 1
+	deadline := blk.Header.Timestamp + 1
 	baseT := time.Unix(int64(deadline), 0)
 	build.Clock.Sleep(build.Clock.Until(baseT))
 

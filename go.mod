@@ -9,6 +9,7 @@ replace (
 )
 
 require (
+	github.com/bluele/gcache v0.0.2
 	github.com/docker/go-units v0.4.0
 	github.com/fatih/color v1.10.0
 	github.com/filecoin-project/filecoin-ffi v0.30.4-0.20200910194244-f640612a1a1f
