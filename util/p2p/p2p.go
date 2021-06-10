@@ -149,7 +149,7 @@ var ChainSwapOpt = node.Options(
 	node.Override(new(*peermgr.PeerMgr), peermgr.NewPeerMgr),
 	node.Override(node.RunPeerMgrKey, func(mctx helpers.MetricsCtx, lc fx.Lifecycle, pmgr *peermgr.PeerMgr, ps *pubsub.PubSub, h host.Host) {
 		blackPeers(ps, h)
-		modules.RunPeerMgr(mctx, lc, pmgr)
+		// modules.RunPeerMgr(mctx, lc, pmgr)
 	}),
 	node.Override(new(dtypes.NetworkName), func() dtypes.NetworkName {
 		return NATNAME
@@ -178,7 +178,8 @@ var ChainSwapOpt = node.Options(
 		return Faddr("127.0.0.1:4321")
 	}),
 	node.Override(node.SetGenesisKey, ServerRPC),
-	node.Override(node.HandleIncomingBlocksKey, HandleIncomingBlocks),
+	// node.Override(node.HandleIncomingBlocksKey, HandleIncomingBlocks),
+	node.Override(node.HandleIncomingBlocksKey, MinerServerNotify),
 )
 
 func HandleIncomingBlocks(mctx helpers.MetricsCtx, lc fx.Lifecycle, ps *pubsub.PubSub, h host.Host, nn dtypes.NetworkName, bs dtypes.ChainBlockService, cbs blockstore.Blockstore, fa api.FullNode, ki *util.Key, actorID address.Address, sp SealedPath, mp *Mpool, pem *peermgr.PeerMgr) {
@@ -225,6 +226,45 @@ func HandleIncomingBlocks(mctx helpers.MetricsCtx, lc fx.Lifecycle, ps *pubsub.P
 	}
 }
 
+func MinerServerNotify(mctx helpers.MetricsCtx, lc fx.Lifecycle, fa util.LotusAPI, cbs blockstore.Blockstore, mr util.NsAddress, ki *util.Key, sealedPath SealedPath, bpeers dtypes.BootstrapPeers, h host.Host, pub *pubsub.PubSub, nn dtypes.NetworkName) {
+	ctx := helpers.LifecycleCtx(mctx, lc)
+	lastHeight := abi.ChainEpoch(0)
+	topic := build.BlocksTopic(nn)
+	for {
+		ts, err := fa.ChainHead(ctx)
+		if err != nil {
+			log.Errorf("lotus get chain head error %v", err)
+			build.Clock.Sleep(3 * time.Second)
+			continue
+		}
+		if lastHeight < ts.Height() {
+			go func() {
+				_, err := MinerMining(ctx, ts.Blocks()[0], nil, fa, mr, ki, sealedPath, nil, func(parentMsg []*util.NsMessage, mret *MiningResult) error {
+					for _, bp := range bpeers {
+						err := h.Connect(ctx, bp)
+						if err != nil {
+							log.Errorf("host connect bootstrap peer %v error %v", bp, err)
+						}
+					}
+					err := publishBlockMsg(ctx, fa, mret, cbs, parentMsg, ki, pub, topic)
+					if err != nil {
+						log.Errorf("publishBlockMsg error %v", err)
+						return err
+					}
+					return nil
+				})
+				if err != nil {
+					log.Errorf("MiningCallBackFun error %v", err)
+					return
+				}
+			}()
+		}
+		lastHeight = ts.Height()
+		sleepT := build.Clock.Now().Unix() - int64(ts.MinTimestamp())
+		build.Clock.Sleep(time.Duration(sleepT) * time.Second)
+	}
+}
+
 func miningServer(ctx context.Context, cbs blockstore.Blockstore, bs dtypes.ChainBlockService, pms chan *pubsub.Message, fa util.LotusAPI, mr util.NsAddress, ki *util.Key, sealedPath SealedPath, mp *Mpool, pub *pubsub.PubSub, topic string) {
 	delay := time.Duration(build.BlockDelaySecs) * time.Second
 	lastHeight := abi.ChainEpoch(0)
@@ -254,49 +294,49 @@ func miningServer(ctx context.Context, cbs blockstore.Blockstore, bs dtypes.Chai
 						tt.Reset(delay / 3)
 					}
 
-					// if _, ok := mapHead[blk.Cid()]; !ok {
-					// 	cidS := append(blk.BlsMessages, blk.SecpkMessages...)
-					// 	mapHead[blk.Cid()] = cidS
-					// 	for _, c := range cidS {
-					// 		if _, ok := mapMsg[c]; !ok {
-					// 			var err error
-					// 			var s *types.Message
-					// 			bf, err := mp.Cache.Get(c)
-					// 			if err != nil {
-					// 				log.Warnf("mpool get bls message %v error %v", c, err)
-					// 			} else {
-					// 				s, err = types.DecodeMessage(bf.([]byte))
-					// 				if err != nil {
-					// 					log.Warnf("mpool DecodeSignedMessage bls message %v error %v", c, err)
-					// 				}
-					// 			}
-					// 			// if err != nil {
-					// 			// 	ss, terr := FetchSigMsgByCid(ctx, cbs, bs, c)
-					// 			// 	if terr != nil || len(ss) == 0 {
-					// 			// 		ss, terr := FetchMsgByCid(ctx, cbs, bs, c)
-					// 			// 		if terr != nil {
-					// 			// 			err = xerrors.Errorf("FetchSigMsgByCid cid %v len %v error %v", c, len(ss), terr)
-					// 			// 		} else {
-					// 			// 			s = ss[0]
-					// 			// 		}
-					// 			// 	} else {
-					// 			// 		err = nil
-					// 			// 		s = &ss[0].Message
-					// 			// 		buf, terr := s.Serialize()
-					// 			// 		if terr == nil {
-					// 			// 			mp.Cache.Set(c, buf)
-					// 			// 		}
-					// 			// 	}
-					// 			// }
-					// 			if err != nil {
-					// 				log.Errorf("mpool get message %v error %v", c, err)
-					// 				delete(mapHead, blk.Cid())
-					// 				break loop
-					// 			}
-					// 			mapMsg[c] = s
-					// 		}
-					// 	}
-					// }
+					if _, ok := mapHead[blk.Cid()]; !ok {
+						cidS := append(blk.BlsMessages, blk.SecpkMessages...)
+						mapHead[blk.Cid()] = cidS
+						for _, c := range cidS {
+							if _, ok := mapMsg[c]; !ok {
+								var err error
+								var s *types.Message
+								bf, err := mp.Cache.Get(c)
+								if err != nil {
+									log.Warnf("mpool get bls message %v error %v", c, err)
+								} else {
+									s, err = types.DecodeMessage(bf.([]byte))
+									if err != nil {
+										log.Warnf("mpool DecodeSignedMessage bls message %v error %v", c, err)
+									}
+								}
+								if err != nil {
+									ss, terr := FetchSigMsgByCid(ctx, cbs, bs, c)
+									if terr != nil || len(ss) == 0 {
+										ss, terr := FetchMsgByCid(ctx, cbs, bs, c)
+										if terr != nil {
+											err = xerrors.Errorf("FetchSigMsgByCid cid %v len %v error %v", c, len(ss), terr)
+										} else {
+											s = ss[0]
+										}
+									} else {
+										err = nil
+										s = &ss[0].Message
+										buf, terr := s.Serialize()
+										if terr == nil {
+											mp.Cache.Set(c, buf)
+										}
+									}
+								}
+								if err != nil {
+									log.Errorf("mpool get message %v error %v", c, err)
+									delete(mapHead, blk.Cid())
+									break loop
+								}
+								mapMsg[c] = s
+							}
+						}
+					}
 				}
 
 			case <-tt.C:
@@ -310,7 +350,7 @@ func miningServer(ctx context.Context, cbs blockstore.Blockstore, bs dtypes.Chai
 		lastHeight = h.Height
 
 		if uint64(build.Clock.Now().Unix())-h.Timestamp >= build.BlockDelaySecs {
-			log.Warnf("fetch message delay")
+			log.Warnf("blocke delay")
 			continue
 		}
 

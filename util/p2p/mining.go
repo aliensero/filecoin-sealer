@@ -112,27 +112,6 @@ func MinerMining(ctx context.Context, blkh *util.NsBlockHeader, mapHead map[util
 	// 		}
 	// 	}
 	// }
-	mapMsg = make(map[util.NsCid]*util.NsMessage)
-	for _, h := range curTipset.Blocks() {
-		bms, err := fa.ChainGetBlockMessages(ctx, h.Cid())
-		if err != nil {
-			return nil, err
-		}
-		for _, m := range bms.BlsMessages {
-			cm := m
-			if _, ok := mapMsg[m.Cid()]; !ok {
-				mapMsg[m.Cid()] = cm
-				parentMsg = append(parentMsg, cm)
-			}
-		}
-		for _, m := range bms.SecpkMessages {
-			cm := m
-			if _, ok := mapMsg[m.Message.Cid()]; !ok {
-				mapMsg[m.Message.Cid()] = &cm.Message
-				parentMsg = append(parentMsg, &cm.Message)
-			}
-		}
-	}
 
 	mbi, round, err := getBaseInfo(ctx, blkh, fa, mr, curTipset)
 	if err != nil || mbi == nil {
@@ -157,6 +136,29 @@ func MinerMining(ctx context.Context, blkh *util.NsBlockHeader, mapHead map[util
 	if err != nil || ep.WinCount < 1 {
 		return nil, xerrors.Errorf("MinerMining getTicketAndElectionProof wincount %v error %v", ep.WinCount, err)
 	}
+
+	mapMsg = make(map[util.NsCid]*util.NsMessage)
+	for _, h := range curTipset.Blocks() {
+		bms, err := fa.ChainGetBlockMessages(ctx, h.Cid())
+		if err != nil {
+			return nil, err
+		}
+		for _, m := range bms.BlsMessages {
+			cm := m
+			if _, ok := mapMsg[m.Cid()]; !ok {
+				mapMsg[m.Cid()] = cm
+				parentMsg = append(parentMsg, cm)
+			}
+		}
+		for _, m := range bms.SecpkMessages {
+			cm := m
+			if _, ok := mapMsg[m.Message.Cid()]; !ok {
+				mapMsg[m.Message.Cid()] = &cm.Message
+				parentMsg = append(parentMsg, &cm.Message)
+			}
+		}
+	}
+
 	statOut, err := fa.StateCompute(ctx, curTipset.Height(), parentMsg, curTipset.Key())
 	if err != nil {
 		return nil, xerrors.Errorf("MinerMining StateCompute error %v", err)
