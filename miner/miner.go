@@ -6,8 +6,6 @@ import (
 	"encoding/hex"
 	"fmt"
 	"os"
-	"strconv"
-	"strings"
 	"sync"
 	"time"
 
@@ -15,10 +13,14 @@ import (
 	logging "github.com/ipfs/go-log/v2"
 	"github.com/jinzhu/gorm"
 	"gitlab.ns/lotus-worker/util"
-	"golang.org/x/xerrors"
 )
 
 func init() {
+	defer func() {
+		if err := recover(); err != nil {
+			log.Errorf("miner-struct recover error %v", err)
+		}
+	}()
 	_ = logging.SetLogLevel("miner-struct", "DEBUG")
 }
 
@@ -48,6 +50,8 @@ type Miner struct {
 	requeryprelock    sync.Mutex
 	requeryseedlock   sync.Mutex
 	requerycommitlock sync.Mutex
+
+	PoStMiner map[int64]util.ActorPoStInfo
 }
 
 type ActorNonceLock struct {
@@ -185,27 +189,27 @@ func (m *Miner) GetSeedRand(actorID int64, sectorNum int64) (string, error) {
 		TaskType:  taskType,
 	}
 
-	taskInfo, err := m.QueryTask(reqInfo)
-
-	if err != nil && !strings.Contains(err.Error(), "record not found") {
+	qr, err := m.QueryTask(reqInfo)
+	if err != nil {
 		return session, err
 	}
-	if err != nil && strings.Contains(err.Error(), "record not found") {
-		log.Warnf("miner GetSeedRand record not found")
-		return "", xerrors.Errorf("miner GetSeedRand %v", err)
+	if qr.ResultCode == util.Err {
+		return qr.ToString(), nil
 	}
-	go func() (string, error) {
+	taskInfo := qr.Results[0]
+
+	go func() {
 
 		var err error
-		var result []byte
+		var ret util.TaskResult
 		defer func() {
 			if err != nil {
-				err = m.RecieveTaskResult(actorID, *taskInfo.SectorNum, taskInfo.TaskType, session, true, []byte(err.Error()))
+				err = m.RecieveTaskResult(actorID, *taskInfo.SectorNum, taskInfo.TaskType, session, true, util.TaskResult{CommString: err.Error()})
 				if err != nil {
 					log.Warn("GetSeed m.RecieveTaskResult error %v", err)
 				}
 			} else {
-				err = m.RecieveTaskResult(actorID, *taskInfo.SectorNum, taskInfo.TaskType, session, false, []byte(result))
+				err = m.RecieveTaskResult(actorID, *taskInfo.SectorNum, taskInfo.TaskType, session, false, ret)
 				if err != nil {
 					log.Warn("GetSeed m.RecieveTaskResult error %v", err)
 				}
@@ -215,28 +219,28 @@ func (m *Miner) GetSeedRand(actorID int64, sectorNum int64) (string, error) {
 
 		tipset, err := m.LotusApi.ChainHead(context.TODO())
 		if err != nil {
-			return session, err
+			return
 		}
 
 		minerAddr, err := util.NsNewIDAddress(uint64(actorID))
 		if err != nil {
-			return session, err
+			return
 		}
 
 		buf := new(bytes.Buffer)
 		if err := minerAddr.MarshalCBOR(buf); err != nil {
-			return session, err
+			return
 		}
 
 		pci, err := m.LotusApi.StateSectorPreCommitInfo(context.TODO(), minerAddr, util.NsSectorNum(*taskInfo.SectorNum), tipset.Key())
 		if err != nil {
-			return "", xerrors.Errorf("getting precommit info: %w", err)
+			return
 		}
 		if &pci == nil {
 			for {
 				pci, err = m.LotusApi.StateSectorPreCommitInfo(context.TODO(), minerAddr, util.NsSectorNum(*taskInfo.SectorNum), tipset.Key())
 				if err != nil {
-					return "", xerrors.Errorf("getting precommit info: %w", err)
+					return
 				}
 				if &pci == nil {
 					time.Sleep(30 * time.Second)
@@ -250,21 +254,20 @@ func (m *Miner) GetSeedRand(actorID int64, sectorNum int64) (string, error) {
 		randHeight := pci.PreCommitEpoch + util.NsChainEpoch(m.WaitSeedEpoch)
 		m.ReqSession.Store(session, nil)
 		for randHeight > tipset.Height() {
-			log.Warnf("actorID %v sectorNum %d randHeight %d grantThan current tipset height %d", minerAddr, *taskInfo.SectorNum, randHeight, tipset.Height())
+			log.Debugf("actorID %v sectorNum %d randHeight %d grantThan current tipset height %d", minerAddr, *taskInfo.SectorNum, randHeight, tipset.Height())
 			time.Sleep(30 * time.Second)
 			tipset, err = m.LotusApi.ChainHead(context.TODO())
 			if err != nil {
-				return "", xerrors.Errorf("actorID %v sectorNum %d randHeight %d WaitSeed error %v", minerAddr, *taskInfo.SectorNum, randHeight, err)
+				return
 			}
 		}
 
 		rand, err := m.LotusApi.ChainGetRandomnessFromBeacon(context.TODO(), tipset.Key(), util.NsDomainSeparationTag_InteractiveSealChallengeSeed, randHeight, buf.Bytes())
 		if err != nil {
-			return session, err
+			return
 		}
-		ret := fmt.Sprintf("%d-%s", tipset.Height(), hex.EncodeToString(rand))
-		result = []byte(ret)
-		return ret, nil
+		ret.SeedEpoch = int64(tipset.Height())
+		ret.SeedHex = hex.EncodeToString(rand)
 	}()
 	return session, nil
 
@@ -283,7 +286,7 @@ func (m *Miner) CheckSession(session string) bool {
 func (m *Miner) CheckWorkerSession(workerListen, session string) bool {
 
 	workerUrl := "ws://" + workerListen + "/rpc/v0"
-	close, workerApi, err := ConnectWorker(workerUrl)
+	close, workerApi, err := util.ConnectWorker(workerUrl)
 	if err != nil {
 		log.Errorf("CheckWorkerSession session %s error %v", session, err)
 		return true
@@ -292,7 +295,7 @@ func (m *Miner) CheckWorkerSession(workerListen, session string) bool {
 	return workerApi.CheckSession(session)
 }
 
-func (m *Miner) RecieveTaskResult(actorID int64, sectorNum int64, taskType string, reqID string, isErr bool, result []byte) error {
+func (m *Miner) RecieveTaskResult(actorID int64, sectorNum int64, taskType string, reqID string, isErr bool, result util.TaskResult) error {
 	var state int64 = util.SUCCESS
 	if isErr {
 		state = util.ERROR
@@ -303,7 +306,6 @@ func (m *Miner) RecieveTaskResult(actorID int64, sectorNum int64, taskType strin
 		SectorNum: sectorNum,
 		TaskType:  taskType,
 		ReqID:     reqID,
-		Db:        *m.Db,
 	}
 	tx := m.Db.Begin()
 	var state1 int64 = util.RUNING
@@ -320,52 +322,45 @@ func (m *Miner) RecieveTaskResult(actorID int64, sectorNum int64, taskType strin
 			return err
 		}
 
-		if err := tx.Where(taskLogWhr).Model(&taskLogWhr).Updates(map[string]interface{}{"state": state, "result": string(result)}).Error; err != nil {
+		if err := tx.Where(taskLogWhr).Model(&taskLogWhr).Updates(map[string]interface{}{"state": state, "result": result.Marshal()}).Error; err != nil {
 			tx.Rollback()
 			return err
 		}
+		go m.TaskFailedHandle(actorID, sectorNum, taskType, result.Marshal())
 	} else {
-
-		if taskInfo.TaskType == util.PRECOMMIT || taskInfo.TaskType == util.COMMIT {
-			if err := tx.Where(taskLogWhr).FirstOrInit(&taskLogWhr).Model(&taskLogWhr).Updates(map[string]interface{}{"state": state, "result": string(result)}).Error; err != nil {
-				tx.Rollback()
-				return err
-			}
-		} else {
-			if err := tx.Where(taskLogWhr).FirstOrInit(&taskLogWhr).Model(&taskLogWhr).Updates(map[string]interface{}{"state": state}).Error; err != nil {
-				tx.Rollback()
-				return err
-			}
+		noCommBytes := result
+		noCommBytes.CommBytes = nil
+		if err := tx.Where(taskLogWhr).FirstOrInit(&taskLogWhr).Model(&taskLogWhr).Updates(map[string]interface{}{"state": state, "result": noCommBytes.Marshal()}).Error; err != nil {
+			tx.Rollback()
+			return err
 		}
 
 		if taskType == util.PC1 {
-			if err := tx.Where(taskInfo).Model(taskInfo).Updates(map[string]interface{}{"task_type": util.NextTask[taskType], "state": util.INIT, "last_req_id": reqID, "phase1_output": result}).Error; err != nil {
+			if err := tx.Where(taskInfo).Model(taskInfo).Updates(map[string]interface{}{"task_type": util.NextTask[taskType], "state": util.INIT, "last_req_id": reqID, "phase1_output": result.CommBytes}).Error; err != nil {
 				tx.Rollback()
 				return err
 			}
 
 		} else if taskType == util.PC2 {
-			var sealedCID string
-			var unsealedCID string
-			rs := strings.Split(string(result), "-")
-			sealedCID = rs[0]
-			unsealedCID = rs[1]
+			sealedCID := result.SealedCID
+			unsealedCID := result.UnsealedCID
 			if err := tx.Where(taskInfo).Model(taskInfo).Updates(map[string]interface{}{"task_type": util.NextTask[taskType], "state": util.INIT, "last_req_id": reqID, "comm_d": unsealedCID, "comm_r": sealedCID}).Error; err != nil {
 				tx.Rollback()
 				return err
 			}
 
-		} else if taskType == util.SEED {
-			var seedEpoch int64
-			var seedHex string
-			rs := strings.Split(string(result), "-")
-			seedTmp, err := strconv.ParseUint(rs[0], 10, 64)
-			if err != nil {
+		} else if taskType == util.PRECOMMIT {
+			var queryTaskInfo util.DbTaskInfo
+			if err := tx.Where(taskInfo).First(&queryTaskInfo).Model(queryTaskInfo).Updates(map[string]interface{}{"task_type": util.NextTask[taskType], "state": util.INIT, "last_req_id": reqID}).Error; err != nil {
 				tx.Rollback()
 				return err
 			}
-			seedEpoch = int64(seedTmp)
-			seedHex = rs[1]
+			go m.RegisterPoSt(actorID, sectorNum, queryTaskInfo.WorkerID)
+
+		} else if taskType == util.SEED {
+
+			seedEpoch := result.SeedEpoch
+			seedHex := result.SeedHex
 
 			if err := tx.Where(taskInfo).Model(taskInfo).Updates(map[string]interface{}{"task_type": util.NextTask[taskType], "state": util.INIT, "last_req_id": reqID, "seed_epoch": seedEpoch, "seed_hex": seedHex}).Error; err != nil {
 				tx.Rollback()
@@ -373,12 +368,17 @@ func (m *Miner) RecieveTaskResult(actorID int64, sectorNum int64, taskType strin
 			}
 
 		} else if taskType == util.C1 {
-			if err := tx.Where(taskInfo).Model(taskInfo).Updates(map[string]interface{}{"task_type": util.NextTask[taskType], "state": util.INIT, "last_req_id": reqID, "c1_out": result}).Error; err != nil {
+			if err := tx.Where(taskInfo).Model(taskInfo).Updates(map[string]interface{}{"task_type": util.NextTask[taskType], "state": util.INIT, "last_req_id": reqID, "c1_out": result.CommBytes}).Error; err != nil {
 				tx.Rollback()
 				return err
 			}
 		} else if taskType == util.C2 {
-			if err := tx.Where(taskInfo).Model(taskInfo).Updates(map[string]interface{}{"task_type": util.NextTask[taskType], "state": util.INIT, "last_req_id": reqID, "proof": result}).Error; err != nil {
+			if err := tx.Where(taskInfo).Model(taskInfo).Updates(map[string]interface{}{"task_type": util.NextTask[taskType], "state": util.INIT, "last_req_id": reqID, "proof": result.CommBytes}).Error; err != nil {
+				tx.Rollback()
+				return err
+			}
+		} else if taskType == util.COMMIT {
+			if err := tx.Where(taskInfo).Model(taskInfo).Updates(map[string]interface{}{"task_type": util.NextTask[taskType], "state": util.INIT, "last_req_id": reqID, "deadline_inx": result.DealineInx, "partition_inx": result.PartitionInx, "c1_out": nil}).Error; err != nil {
 				tx.Rollback()
 				return err
 			}
@@ -391,6 +391,9 @@ func (m *Miner) RecieveTaskResult(actorID int64, sectorNum int64, taskType strin
 	}
 	if err := tx.Commit().Error; err != nil {
 		return err
+	}
+	if taskType == util.COMMIT {
+		go m.UpdatePoStInfo(actorID, sectorNum)
 	}
 	return nil
 }

@@ -21,20 +21,27 @@ func (m *Miner) SendPreCommit(actorID int64, sectorNum int64, deposit string, fe
 		TaskType:  taskType,
 	}
 
-	taskInfo, err := m.QueryTask(reqInfo)
+	qr, err := m.QueryTask(reqInfo)
+	if err != nil {
+		return session, err
+	}
+	if qr.ResultCode == util.Err {
+		return qr.ToString(), nil
+	}
+	taskInfo := qr.Results[0]
 
 	if err != nil && !strings.Contains(err.Error(), "record not found") {
 		return session, err
 	}
 	if err != nil && strings.Contains(err.Error(), "record not found") {
-		log.Warnf("miner SendPreCommit record not found")
+		log.Debugf("miner SendPreCommit record not found")
 		return "", xerrors.Errorf("miner SendPreCommit %v", err)
 	}
 
 	m.ReqSession.Store(session, nil)
 	defer func() {
 		if err != nil {
-			err := m.RecieveTaskResult(actorID, *taskInfo.SectorNum, taskType, session, true, []byte(err.Error()))
+			err := m.RecieveTaskResult(actorID, *taskInfo.SectorNum, taskType, session, true, util.TaskResult{CommString: err.Error()})
 			if err != nil {
 				log.Errorf("SendPreCommit actorID %d sectorNum %d error %v", actorID, *taskInfo.SectorNum, err)
 			}
@@ -80,7 +87,7 @@ func (m *Miner) SendPreCommit(actorID int64, sectorNum int64, deposit string, fe
 		return session, err
 	}
 	msgCID, err := m.SendMsg(fromStr, minerAddr.String(), int64(util.NsMethods.PreCommitSector), deposit, fee, enc.Bytes(), func(isErr bool, result string) {
-		err := m.RecieveTaskResult(actorID, *taskInfo.SectorNum, taskType, session, isErr, []byte(result))
+		err := m.RecieveTaskResult(actorID, *taskInfo.SectorNum, taskType, session, isErr, util.TaskResult{CommString: result})
 		m.ReqSession.Delete(session)
 		log.Warnf("SendPreCommit actorID %d sectorNum %d result %s error %v", actorID, *taskInfo.SectorNum, result, err)
 	})
@@ -109,14 +116,15 @@ func (m *Miner) SendCommit(actorID int64, sectorNum int64, deposit string, fee s
 	}
 
 	var err error
-	taskInfo, err := m.QueryTask(reqInfo)
-	if err != nil && !strings.Contains(err.Error(), "record not found") {
+	qr, err := m.QueryTask(reqInfo)
+	if err != nil {
 		return session, err
 	}
-	if err != nil && strings.Contains(err.Error(), "record not found") {
-		log.Warnf("miner SendCommit record not found")
-		return "", xerrors.Errorf("miner SendCommit %v", err)
+	if qr.ResultCode == util.Err {
+		return qr.ToString(), nil
 	}
+	taskInfo := qr.Results[0]
+
 	tipset, err := m.LotusApi.ChainHead(context.TODO())
 	if err != nil {
 		return session, err
@@ -124,7 +132,7 @@ func (m *Miner) SendCommit(actorID int64, sectorNum int64, deposit string, fee s
 	m.ReqSession.Store(session, nil)
 	defer func() {
 		if err != nil {
-			err := m.RecieveTaskResult(actorID, *taskInfo.SectorNum, taskType, session, true, []byte(err.Error()))
+			err := m.RecieveTaskResult(actorID, *taskInfo.SectorNum, taskType, session, true, util.TaskResult{CommString: err.Error()})
 			if err != nil {
 				log.Errorf("SendCommit m.SendMsg actorID %d sectorNum %d error %v", actorID, *taskInfo.SectorNum, err)
 			}
@@ -156,7 +164,20 @@ func (m *Miner) SendCommit(actorID int64, sectorNum int64, deposit string, fee s
 		return session, err
 	}
 	msgCID, err := m.SendMsg(fromStr, minerAddr.String(), int64(util.NsMethods.ProveCommitSector), deposit, fee, enc.Bytes(), func(isErr bool, result string) {
-		err := m.RecieveTaskResult(actorID, *taskInfo.SectorNum, taskType, session, isErr, []byte(result))
+
+		dInx := uint64(0)
+		pInx := uint64(0)
+		loc, err := m.LotusApi.StateSectorPartition(context.TODO(), minerAddr, util.NsSectorNum(*taskInfo.SectorNum), util.NsTipSetKey{})
+		if err == nil {
+			dInx = loc.Deadline
+			pInx = loc.Partition
+		}
+		ret := util.TaskResult{}
+		ret.CommString = result + ";" + err.Error()
+		ret.DealineInx = dInx
+		ret.PartitionInx = pInx
+
+		err = m.RecieveTaskResult(actorID, *taskInfo.SectorNum, taskType, session, isErr, util.TaskResult{CommString: result})
 		m.ReqSession.Delete(session)
 		log.Warnf("SendCommit actorID %d sectorNum %d result %s error %v", actorID, *taskInfo.SectorNum, result, err)
 	})
@@ -201,7 +222,7 @@ func (m *Miner) SendMsg(from string, to string, method int64, deposit string, fe
 		Method: util.NsMethodNum(method),
 		Params: params,
 	}
-	sigture, err := m.LotusApi.MpoolPushMessage(context.TODO(), &msg, &util.NsMessageSendSpec{util.Nsbig(feeFIL)})
+	sigture, err := m.LotusApi.MpoolPushMessage(context.TODO(), &msg, &util.NsMessageSendSpec{MaxFee: util.Nsbig(feeFIL)})
 	if err != nil {
 		return "", err
 	}

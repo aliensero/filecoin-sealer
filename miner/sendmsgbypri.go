@@ -5,7 +5,6 @@ import (
 	"context"
 	"fmt"
 	"reflect"
-	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -39,20 +38,20 @@ func (m *Miner) SendPreCommitByPrivatKey(prihex string, actorID int64, sectorNum
 		return "", err
 	}
 
-	taskInfo, err := m.QueryTask(reqInfo)
-
-	if err != nil && !strings.Contains(err.Error(), "record not found") {
+	qr, err := m.QueryTask(reqInfo)
+	if err != nil {
 		return session, err
 	}
-	if err != nil && strings.Contains(err.Error(), "record not found") {
-		log.Warnf("miner SendPreCommitByPrivatKey record not found")
-		return "", xerrors.Errorf("miner SendPreCommitByPrivatKey %v", err)
+	if qr.ResultCode == util.Err {
+		return qr.ToString(), nil
 	}
+	taskInfo := qr.Results[0]
+
 	m.ReqSession.Store(session, nil)
 	defer func() {
 		if err != nil {
 			log.Errorf("sendMsg defer error %v", err)
-			err1 := m.RecieveTaskResult(actorID, *taskInfo.SectorNum, taskType, session, true, []byte(err.Error()))
+			err1 := m.RecieveTaskResult(actorID, *taskInfo.SectorNum, taskType, session, true, util.TaskResult{CommString: err.Error()})
 			if err1 != nil {
 				log.Errorf("SendPreCommitByPrivatKey actorID %d sectorNum %d error %v", actorID, *taskInfo.SectorNum, err1)
 			}
@@ -97,10 +96,12 @@ func (m *Miner) SendPreCommitByPrivatKey(prihex string, actorID int64, sectorNum
 	cbvarsectorNum := *taskInfo.SectorNum
 	cbvartaskType := taskType
 	msgCID, err := m.sendMsgByPrivatKey(prihex, msg, func(isErr bool, result string) {
-		err := m.RecieveTaskResult(cbvaractorID, cbvarsectorNum, cbvartaskType, cbvarSession, isErr, []byte(result))
+		err := m.RecieveTaskResult(cbvaractorID, cbvarsectorNum, cbvartaskType, cbvarSession, isErr, util.TaskResult{CommString: result})
 		log.Warnf("cbvarsectorNum % d cbvarSession %v", cbvarsectorNum, cbvarSession)
 		m.ReqSession.Delete(cbvarSession)
-		log.Warnf("SendPreCommitByPrivatKey actorID %d sectorNum %d result %s error %v", cbvaractorID, cbvarsectorNum, result, err)
+		if err != nil {
+			log.Errorf("SendPreCommitByPrivatKey actorID %d sectorNum %d result %s error %v", cbvaractorID, cbvarsectorNum, result, err)
+		}
 	})
 
 	if err != nil {
@@ -147,21 +148,20 @@ func (m *Miner) SendCommitByPrivatKey(prihex string, actorID int64, sectorNum in
 		return "", err
 	}
 
-	taskInfo, err := m.QueryTask(reqInfo)
-
-	if err != nil && !strings.Contains(err.Error(), "record not found") {
+	qr, err := m.QueryTask(reqInfo)
+	if err != nil {
 		return session, err
 	}
-	if err != nil && strings.Contains(err.Error(), "record not found") {
-		log.Warnf("miner SendCommitByPrivatKey record not found")
-		return "", xerrors.Errorf("miner SendCommitByPrivatKey %v", err)
+	if qr.ResultCode == util.Err {
+		return qr.ToString(), nil
 	}
+	taskInfo := qr.Results[0]
 
 	m.ReqSession.Store(session, nil)
 	defer func() {
 		if err != nil {
 			log.Errorf("sendMsg defer error %v", err)
-			err1 := m.RecieveTaskResult(actorID, *taskInfo.SectorNum, taskType, session, true, []byte(err.Error()))
+			err1 := m.RecieveTaskResult(actorID, *taskInfo.SectorNum, taskType, session, true, util.TaskResult{CommString: err.Error()})
 			if err1 != nil {
 				log.Errorf("SendCommitByPrivatKey actorID %d sectorNum %d error %v", actorID, *taskInfo.SectorNum, err1)
 			}
@@ -199,10 +199,28 @@ func (m *Miner) SendCommitByPrivatKey(prihex string, actorID int64, sectorNum in
 	cbvarsectorNum := *taskInfo.SectorNum
 	cbvartaskType := taskType
 	msgCID, err := m.sendMsgByPrivatKey(prihex, msg, func(isErr bool, result string) {
-		err := m.RecieveTaskResult(cbvaractorID, cbvarsectorNum, cbvartaskType, cbvarSession, isErr, []byte(result))
+
+		dInx := uint64(0)
+		pInx := uint64(0)
+		loc, err := m.LotusApi.StateSectorPartition(context.TODO(), minerAddr, util.NsSectorNum(cbvarsectorNum), util.NsTipSetKey{})
+		if err == nil {
+			dInx = loc.Deadline
+			pInx = loc.Partition
+		}
+		ret := util.TaskResult{}
+		if err != nil {
+			result += ";" + err.Error()
+		}
+		ret.CommString = result
+		ret.DealineInx = dInx
+		ret.PartitionInx = pInx
+
+		err = m.RecieveTaskResult(cbvaractorID, cbvarsectorNum, cbvartaskType, cbvarSession, isErr, ret)
 		log.Warnf("cbvarsectorNum % d cbvarSession2 %v", cbvarsectorNum, cbvarSession)
 		m.ReqSession.Delete(cbvarSession)
-		log.Warnf("SendCommitByPrivatKey actorID %d sectorNum %d result %s error %v", actorID, cbvarsectorNum, result, err)
+		if err != nil {
+			log.Errorf("SendCommitByPrivatKey actorID %d sectorNum %d result %s error %v", actorID, cbvarsectorNum, result, err)
+		}
 	})
 
 	if err != nil {
@@ -236,7 +254,7 @@ func (m *Miner) sendMsgByPrivatKey(prihex string, msg util.NsMessage, cbs ...fun
 		return "", err
 	}
 	msg = *msgptr
-	sigMsg, err := util.GenerateUtilSigMsg(m.LotusApi, prihex, msg)
+	sigMsg, err := util.GenerateUtilSigMsg(prihex, msg)
 	if err != nil {
 		log.Errorf("Miner sendMsgByPrivatKey GenerateUtilSigMsg error %v", err)
 		return "", err
@@ -247,7 +265,8 @@ func (m *Miner) sendMsgByPrivatKey(prihex string, msg util.NsMessage, cbs ...fun
 		return "", err
 	}
 	if len(cbs) != 0 {
-		for _, cb := range cbs {
+		for _, ccb := range cbs {
+			cb := ccb
 			go func() {
 				receipt, err := m.LotusApi.StateGetReceipt(context.TODO(), cid, util.NsTipSetKey{})
 				for i := 0; i < 10; i++ {

@@ -1,6 +1,8 @@
 package p2p
 
 import (
+	"fmt"
+	"os"
 	"strconv"
 
 	"github.com/filecoin-project/lotus/node"
@@ -8,6 +10,7 @@ import (
 	"github.com/urfave/cli/v2"
 	"gitlab.ns/lotus-worker/util"
 	up2p "gitlab.ns/lotus-worker/util/p2p"
+	"golang.org/x/term"
 )
 
 var log = logging.Logger("p2p")
@@ -52,10 +55,22 @@ var SubCmd = &cli.Command{
 		if err != nil {
 			return err
 		}
+
+		pk := cctx.String("privatekey")
+		if pk == "" {
+			fmt.Print("enter private key:")
+			buf, err := term.ReadPassword(int(os.Stdin.Fd()))
+			if err != nil {
+				return err
+			}
+			fmt.Println()
+			pk = string(buf)
+		}
+
 		stop, err := up2p.NsNodeNew(ctx,
 			up2p.Repo(r),
 			up2p.ChainSwapOpt,
-			up2p.NsOverride(new(up2p.PrivateKey), up2p.PrivateKey(cctx.String("privatekey"))),
+			up2p.NsOverride(new(up2p.PrivateKey), up2p.PrivateKey(pk)),
 			up2p.NsOverride(new(util.NsAddress), func() (util.NsAddress, error) {
 				return util.NsNewIDAddress(cctx.Uint64("actorid"))
 			}),

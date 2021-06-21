@@ -2,10 +2,12 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"io/ioutil"
 	"net"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -14,6 +16,7 @@ import (
 	"github.com/gorilla/mux"
 	logging "github.com/ipfs/go-log/v2"
 	"github.com/urfave/cli/v2"
+	"golang.org/x/term"
 	"golang.org/x/xerrors"
 
 	"gitlab.ns/lotus-worker/util"
@@ -33,6 +36,8 @@ func main() {
 		unSealedFileCmd,
 		taskRunCmd,
 		recoveryCmd,
+		taskTriggerCmd,
+		addPostCmd,
 	}
 
 	app := &cli.App{
@@ -104,22 +109,22 @@ var runCmd = &cli.Command{
 		&cli.Int64Flag{
 			Name:  "pc1to",
 			Usage: "pc1 time out",
-			Value: 14400,
+			Value: 28800,
 		},
 		&cli.Int64Flag{
 			Name:  "pc2to",
 			Usage: "pc2 time out",
-			Value: 7200,
+			Value: 28800,
 		},
 		&cli.Int64Flag{
 			Name:  "c1to",
 			Usage: "c1 time out",
-			Value: 600,
+			Value: 28800,
 		},
 		&cli.Int64Flag{
 			Name:  "c2to",
 			Usage: "c2 time out",
-			Value: 7200,
+			Value: 28800,
 		},
 		&cli.StringFlag{
 			Name:  "workerid",
@@ -197,7 +202,7 @@ var runCmd = &cli.Command{
 			WorkerID:      workerID,
 			TaskTimeOut:   timeOut,
 			ExtrListen:    extrListen,
-			PoStMiner:     make(map[int64]worker.ActorPoStInfo),
+			PoStMiner:     make(map[int64]util.ActorPoStInfo),
 		}
 
 		rpcServer.Register("NSWORKER", workerInstan)
@@ -289,7 +294,7 @@ var taskRunCmd = &cli.Command{
 	},
 	Action: func(cctx *cli.Context) error {
 
-		close, minerApi, err := worker.ConnMiner(cctx.String("minerapi"))
+		close, minerApi, err := util.ConnMiner(cctx.String("minerapi"))
 		if err != nil {
 			return err
 		}
@@ -300,12 +305,14 @@ var taskRunCmd = &cli.Command{
 			ActorID:   &actorID,
 			SectorNum: &sectorNum,
 		}
-		taskInfos, err := minerApi.QueryOnly(taskInfoWhr)
+		qr, err := minerApi.QueryOnly(taskInfoWhr)
 		if err != nil {
 			return err
 		}
-
-		taskInfo := taskInfos[0]
+		if qr.ResultCode == util.Err {
+			return xerrors.Errorf(qr.Err)
+		}
+		taskInfo := qr.Results[0]
 
 		_, _, err = worker.TaskRun(taskInfo, minerApi, cctx.String("minerapi"), cctx.String("session"))
 		return err
@@ -377,4 +384,180 @@ func extractRoutableIP(timeout time.Duration) (string, error) {
 	localAddr := conn.LocalAddr().(*net.TCPAddr)
 
 	return strings.Split(localAddr.IP.String(), ":")[0], nil
+}
+
+var taskTriggerCmd = &cli.Command{
+	Name: "tasktrig",
+	Flags: []cli.Flag{
+		&cli.StringFlag{
+			Name:    "bin",
+			Usage:   "bin path",
+			EnvVars: []string{"WORKER_BIN_PATH"},
+		},
+		&cli.BoolFlag{
+			Name:  "restart",
+			Value: false,
+		},
+		&cli.StringFlag{
+			Name:    "workerapi",
+			Usage:   "worker api",
+			EnvVars: []string{"WORKER_API"},
+			Value:   "ws://127.0.0.1:3456/rpc/v0",
+		},
+	},
+	Action: func(cctx *cli.Context) error {
+
+		if cctx.Args().Len() < 3 {
+			return fmt.Errorf("[actorid] [sectornum] [tasktype]")
+		}
+
+		close, workerApi, err := util.ConnectWorker(cctx.String("workerapi"))
+		if err != nil {
+			return err
+		}
+		defer close()
+
+		ai, err := strconv.ParseInt(cctx.Args().Get(0), 10, 64)
+		if err != nil {
+			return err
+		}
+		var actorID int64 = ai
+		si, err := strconv.ParseInt(cctx.Args().Get(1), 10, 64)
+		if err != nil {
+			return err
+		}
+		var sectorNum int64 = si
+
+		taskType := cctx.Args().Get(2)
+
+		var result interface{}
+		if !cctx.Bool("restart") {
+			switch taskType {
+			case util.PC1:
+				result, err = workerApi.ProcessPrePhase1(actorID, sectorNum, cctx.String("bin"))
+			case util.PC2:
+				result, err = workerApi.ProcessPrePhase2(actorID, sectorNum, cctx.String("bin"))
+			case util.C1:
+				result, err = workerApi.ProcessCommitPhase1(actorID, sectorNum, cctx.String("bin"))
+			case util.C2:
+				result, err = workerApi.ProcessCommitPhase2(actorID, sectorNum, cctx.String("bin"))
+			}
+		} else {
+			result, err = workerApi.RetryTaskPID(actorID, sectorNum, taskType, cctx.String("bin"))
+		}
+		if err == nil {
+			log.Info(result)
+		}
+		return err
+	},
+}
+
+var addPostCmd = &cli.Command{
+	Name:  "addPost",
+	Usage: "[actorid] [address or private key]",
+	Flags: []cli.Flag{
+		&cli.StringFlag{
+			Name:  "type",
+			Usage: "private type",
+			Value: "pri",
+		},
+		&cli.StringFlag{
+			Name:    "workerapi",
+			Usage:   "worker api",
+			EnvVars: []string{"WORKER_API"},
+			Value:   "ws://127.0.0.1:3456/rpc/v0",
+		},
+	},
+	Action: func(cctx *cli.Context) error {
+
+		if cctx.Args().Len() < 2 {
+			return fmt.Errorf("[actorid] [address or private key]")
+		}
+
+		close, workerApi, err := util.ConnectWorker(cctx.String("workerapi"))
+		if err != nil {
+			return err
+		}
+		defer close()
+
+		ai, err := strconv.ParseInt(cctx.Args().Get(0), 10, 64)
+		if err != nil {
+			return err
+		}
+		var actorID int64 = ai
+
+		t := cctx.String("type")
+		pk := cctx.Args().Get(1)
+		if t == worker.PRI && pk == "" {
+			fmt.Print("enter private key:")
+			buf, err := term.ReadPassword(int(os.Stdin.Fd()))
+			if err != nil {
+				return err
+			}
+			fmt.Println()
+			pk = string(buf)
+		}
+
+		result, err := workerApi.AddPoStActor(actorID, cctx.String("type"), pk)
+
+		if err == nil {
+			log.Info(result)
+		}
+		return err
+	},
+}
+
+var retryPostCmd = &cli.Command{
+	Name:  "retryPost",
+	Usage: "[actorid] [address or private key]",
+	Flags: []cli.Flag{
+		&cli.StringFlag{
+			Name:  "type",
+			Usage: "private type",
+			Value: "pri",
+		},
+		&cli.StringFlag{
+			Name:    "workerapi",
+			Usage:   "worker api",
+			EnvVars: []string{"WORKER_API"},
+			Value:   "ws://127.0.0.1:3456/rpc/v0",
+		},
+	},
+	Action: func(cctx *cli.Context) error {
+
+		if cctx.Args().Len() < 2 {
+			return fmt.Errorf("[actorid] [address or private key]")
+		}
+
+		close, workerApi, err := util.ConnectWorker(cctx.String("workerapi"))
+		if err != nil {
+			return err
+		}
+		defer close()
+
+		ai, err := strconv.ParseInt(cctx.Args().Get(0), 10, 64)
+		if err != nil {
+			return err
+		}
+		var actorID int64 = ai
+
+		t := cctx.String("type")
+		pk := cctx.Args().Get(1)
+		if t == worker.PRI && pk == "" {
+			fmt.Print("enter private key:")
+			buf, err := term.ReadPassword(int(os.Stdin.Fd()))
+			if err != nil {
+				return err
+			}
+			fmt.Println()
+			pk = string(buf)
+		}
+
+		result, err := workerApi.RetryWinPoSt(actorID, pk, cctx.String("type"))
+
+		if err == nil {
+			log.Info(result)
+		}
+		return err
+	},
 }

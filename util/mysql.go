@@ -113,6 +113,9 @@ type DbTaskInfo struct {
 	Proof []byte `gorm:"type:mediumblob"`
 
 	State *int64 `gorm:"default:0"`
+
+	DeadlineInx  uint64
+	PartitionInx uint64
 }
 
 type DbTaskLog struct {
@@ -130,8 +133,6 @@ type DbTaskLog struct {
 
 	State  int64  `gorm:"index;default:0"`
 	Result string `gorm:"type:Text"`
-
-	Db gorm.DB `gorm:"-"`
 }
 
 type DbPostInfo struct {
@@ -144,25 +145,9 @@ type DbPostInfo struct {
 	CacheDirPath     string
 	SealedSectorPath string
 	ProofType        int64
+	DeadlineInx      uint64
+	PartitionInx     uint64
 	State            int64
-}
-
-func (taskLog DbTaskLog) AfterSave() (err error) {
-	if taskLog.State == ERROR {
-		go TaskFailedHandle(taskLog)
-	}
-	return
-}
-
-func (taskLog DbTaskLog) AfterUpdate() (err error) {
-	if taskLog.State == SUCCESS && taskLog.TaskType == C1 {
-		go RegisterPoSt(taskLog)
-	}
-
-	if taskLog.State == SUCCESS && taskLog.TaskType == COMMIT {
-		go UpdatePoStInfo(taskLog)
-	}
-	return
 }
 
 type DbAddressInfo struct {

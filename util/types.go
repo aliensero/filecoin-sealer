@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"path/filepath"
+	"time"
 
 	commcid "github.com/filecoin-project/go-fil-commcid"
 	"github.com/filecoin-project/go-jsonrpc"
@@ -20,8 +21,11 @@ import (
 	"github.com/filecoin-project/go-state-types/dline"
 	"github.com/filecoin-project/go-state-types/exitcode"
 
+	"github.com/libp2p/go-libp2p"
 	p2pcrypt "github.com/libp2p/go-libp2p-core/crypto"
+	"github.com/libp2p/go-libp2p-core/host"
 	"github.com/libp2p/go-libp2p-core/peer"
+	pubsub "github.com/libp2p/go-libp2p-pubsub"
 
 	ffi "github.com/filecoin-project/filecoin-ffi"
 	"github.com/filecoin-project/filecoin-ffi/generated"
@@ -71,6 +75,9 @@ type NsMethodNum = abi.MethodNum
 type NsPaddedPieceSize = abi.PaddedPieceSize
 type NsRegisteredPoStProof = abi.RegisteredPoStProof
 type NsPoStRandomness = abi.PoStRandomness
+type NsDealID = abi.DealID
+
+var NsSealProofInfos = abi.SealProofInfos
 
 type NsCid = cid.Cid
 
@@ -116,6 +123,7 @@ var NsNewInt = types.NewInt
 var NsNewTipSet = types.NewTipSet
 var NsDecodeBlockMsg = types.DecodeBlockMsg
 var NsBigFromBytes = types.BigFromBytes
+var NsBigFromString = types.BigFromString
 var NsDecodeSignedMessage = types.DecodeSignedMessage
 var NsNewTipSetKey = types.NewTipSetKey
 
@@ -218,9 +226,11 @@ var NsGeneratePoStFallbackSectorChallenges = ffi.GeneratePoStFallbackSectorChall
 var NsGenerateSingleVanillaProof = ffi.GenerateSingleVanillaProof
 var NsGenerateWindowPoStWithVanilla = ffi.GenerateWindowPoStWithVanilla
 var NsVerifyWinningPoSt = ffi.VerifyWinningPoSt
+var NsVerifyWindowPoSt = ffi.VerifyWindowPoSt
 
 type NsSectorInfo = proof2.SectorInfo
 type NsPoStProof = proof2.PoStProof
+type NsWindowPoStVerifyInfo = proof2.WindowPoStVerifyInfo
 
 var NsActorStore = store.ActorStore
 var NsDrawRandomness = store.DrawRandomness
@@ -261,7 +271,120 @@ type NsCBORMarshaler = cbg.CBORMarshaler
 
 type NsWinningPoStVerifyInfo = proof2.WinningPoStVerifyInfo
 
+type TaskResult struct {
+	SealedCID   string
+	UnsealedCID string
+
+	SeedEpoch int64
+	SeedHex   string
+
+	DealineInx   uint64
+	PartitionInx uint64
+
+	CommString string
+	CommBytes  []byte
+}
+
+func (tr *TaskResult) Marshal() string {
+	return fmt.Sprintf("%v", tr)
+}
+
+type P2pLotusAPI struct {
+	api.FullNode
+	host      host.Host
+	sub       *pubsub.PubSub
+	bootPeers []peer.AddrInfo
+	nn        dtypes.NetworkName
+}
+
+func (a *P2pLotusAPI) MpoolPush(ctx context.Context, m *types.SignedMessage) (cid.Cid, error) {
+	b, err := m.Serialize()
+	if err != nil {
+		return cid.Undef, err
+	}
+
+	if a.sub != nil {
+	loop:
+		for {
+			for _, p := range a.bootPeers {
+				if err := a.host.Connect(ctx, p); err == nil {
+					break loop
+				} else {
+					log.Errorf("connect peer %v error %v", p, err)
+				}
+			}
+			time.Sleep(30 * time.Second)
+		}
+
+		err = a.sub.Publish(build.MessagesTopic(a.nn), b)
+		if err != nil {
+			return cid.Undef, err
+		}
+	} else {
+		_, err := a.FullNode.MpoolPush(ctx, m)
+		if err != nil {
+			return cid.Undef, err
+		}
+	}
+	return m.Cid(), nil
+}
+
+func NewP2pLotusAPI(a api.FullNode, nn dtypes.NetworkName) (*P2pLotusAPI, error) {
+	api := &P2pLotusAPI{}
+	h, sub, ps, _ := NewPubSub()
+	// if err != nil {
+	// 	return nil, err
+	// }
+	api.sub = sub
+	api.bootPeers = ps
+	api.nn = nn
+	api.FullNode = a
+	api.host = h
+	return api, nil
+}
+
+func NewPubSub() (host.Host, *pubsub.PubSub, []peer.AddrInfo, error) {
+
+	ctx := context.TODO()
+	host, err := libp2p.New(
+		ctx,
+		libp2p.Defaults,
+	)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	ps, err := pubsub.NewGossipSub(ctx, host)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+
+	pi, err := build.BuiltinBootstrap()
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	connected := false
+	for _, p := range pi {
+		if err := host.Connect(ctx, p); err == nil {
+			connected = true
+			break
+		} else {
+			log.Errorf("connect peer %v error %v", p, err)
+		}
+	}
+	if !connected {
+		log.Errorf("bootstrap peers %v", pi)
+		return nil, nil, nil, xerrors.Errorf("connect bootstrap peers failed")
+	}
+	return host, ps, pi, nil
+}
+
 var NsComputeNextBaseFee = store.ComputeNextBaseFee
+
+type ActorPoStInfo struct {
+	AddrInfo string
+	AddrType string
+	DiOpen   NsChainEpoch
+}
 
 func NsSealPreCommitPhase1(nsProof NsRegisteredSealProof, cacheDirPath, stagedSectorPath, sealedSectorPath string, nsSectorNum NsSectorNum, nsActorID NsActorID, nsTicket NsSealRandomness, nsPieceInfo []NsPieceInfo) ([]byte, error) {
 
@@ -439,6 +562,48 @@ func VerifyMsgByAddr(addrstr string, msghex string, sighex string) error {
 	return VerifyMsg(sig, addr, msg)
 }
 
+func GenerateCreateMinerMsg(owner, worker string, sealProofType int64, nonce uint64) (*NsMessage, error) {
+
+	addrowner, err := address.NewFromString(owner)
+	if err != nil {
+		return nil, err
+	}
+	addrworker, err := address.NewFromString(worker)
+	if err != nil {
+		return nil, err
+	}
+
+	pk, _, err := p2pcrypt.GenerateEd25519Key(rand.Reader)
+	if err != nil {
+		return nil, err
+	}
+
+	peerid, err := peer.IDFromPrivateKey(pk)
+	if err != nil {
+		return nil, xerrors.Errorf("peer ID from private key: %w", err)
+	}
+
+	params, err := actors.SerializeParams(&power2.CreateMinerParams{
+		Owner:         addrowner,
+		Worker:        addrworker,
+		SealProofType: NsRegisteredSealProof(sealProofType),
+		Peer:          []byte(peerid),
+	})
+	if err != nil {
+		return nil, err
+	}
+	msg := NsMessage{
+		To:     builtin2.StoragePowerActorAddr,
+		From:   addrowner,
+		Value:  types.NewInt(0),
+		Method: 2,
+		Nonce:  nonce,
+		Params: params,
+	}
+
+	return &msg, nil
+}
+
 func GenerateCreateMinerSigMsg(lotusApi LotusAPI, prihex, owner, worker string, sealProofType int64, nonce uint64) (*NsSignedMessage, error) {
 
 	addrowner, err := address.NewFromString(owner)
@@ -478,16 +643,17 @@ func GenerateCreateMinerSigMsg(lotusApi LotusAPI, prihex, owner, worker string, 
 		Params: params,
 	}
 
-	msgptr, err := lotusApi.GasEstimateMessageGas(context.TODO(), &msg, nil, NsTipSetKey{})
+	var mss *api.MessageSendSpec
+	msgptr, err := lotusApi.GasEstimateMessageGas(context.TODO(), &msg, mss, NsTipSetKey{})
 	if err != nil {
 		log.Errorf("sendMsgByPrivatKey GasEstimateMessageGas error %v", err)
 		return nil, err
 	}
 	msg = *msgptr
-	return GenerateUtilSigMsg(lotusApi, prihex, msg)
+	return GenerateUtilSigMsg(prihex, msg)
 }
 
-func GenerateUtilSigMsg(lotusApi LotusAPI, prihex string, msgParam NsMessage) (*NsSignedMessage, error) {
+func GenerateUtilSigMsg(prihex string, msgParam NsMessage) (*NsSignedMessage, error) {
 
 	cp := msgParam
 	msg := &cp

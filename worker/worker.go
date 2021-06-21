@@ -43,7 +43,7 @@ type Worker struct {
 
 	TaskTimeOut map[string]int64
 
-	PoStMiner map[int64]ActorPoStInfo
+	PoStMiner map[int64]util.ActorPoStInfo
 }
 
 type FailedTask struct {
@@ -57,12 +57,6 @@ type FailedTask struct {
 type TaskRuningInfo struct {
 	LmtLock   sync.Mutex
 	RuningCnt int
-}
-
-type ChildProcessInfo struct {
-	ActorID   int64
-	SectorNum int64
-	Pid       int
 }
 
 type Reader struct{}
@@ -164,7 +158,7 @@ func (w *Worker) ConnMiner() (err error) {
 			minerAlive = false
 		}
 		if !minerAlive {
-			closer, mi, err1 := ConnMiner(w.MinerUrl)
+			closer, mi, err1 := util.ConnMiner(w.MinerUrl)
 			err = err1
 			if err1 != nil {
 				log.Errorf("worker.ConnMiner error %v", err1)
@@ -206,9 +200,9 @@ func (w *Worker) IncrementTask(taskType string) error {
 		return xerrors.Errorf("task greater than taskType %s limit %d,now running %d", taskType, w.TaskLimit[taskType], w.TaskRun[taskType].RuningCnt)
 	}
 
-	mux := w.TaskRun[taskType].LmtLock
-	mux.Lock()
-	defer mux.Unlock()
+	// mux := w.TaskRun[taskType].LmtLock
+	w.TaskRun[taskType].LmtLock.Lock()
+	defer w.TaskRun[taskType].LmtLock.Unlock()
 	if w.TaskLimit[taskType] <= w.TaskRun[taskType].RuningCnt {
 		return xerrors.Errorf("task greater than taskType %s limit %d,now running %d", taskType, w.TaskLimit[taskType], w.TaskRun[taskType].RuningCnt)
 	}
@@ -231,9 +225,9 @@ func (w *Worker) DecrementTask(taskType string) error {
 	if 0 == w.TaskRun[taskType].RuningCnt {
 		return nil
 	}
-	mux := w.TaskRun[taskType].LmtLock
-	mux.Lock()
-	defer mux.Unlock()
+	// mux := w.TaskRun[taskType].LmtLock
+	w.TaskRun[taskType].LmtLock.Lock()
+	defer w.TaskRun[taskType].LmtLock.Unlock()
 	rif := w.TaskRun[taskType]
 	rif.RuningCnt -= 1
 
@@ -275,7 +269,7 @@ func (w *Worker) MotifyWorkerListen(l string) string {
 	return l
 }
 
-func (w *Worker) DeferMinerRecieve(actorID int64, sectorNum int64, taskType string, session string, result []byte, processErr error) {
+func (w *Worker) DeferMinerRecieve(actorID int64, sectorNum int64, taskType string, session string, result util.TaskResult, processErr error) {
 
 	var minerApiErr error
 	close, minerApiErr := deferMinerRecieve(w.MinerApi, w.MinerUrl, actorID, sectorNum, taskType, session, result, processErr)
@@ -289,7 +283,7 @@ func (w *Worker) DeferMinerRecieve(actorID int64, sectorNum int64, taskType stri
 			failedTask.IsErr = true
 			failedTask.Result = []byte(processErr.Error())
 		} else {
-			failedTask.Result = result
+			failedTask.Result = result.CommBytes
 		}
 		w.FialedMap[session] = failedTask
 	}
@@ -334,7 +328,7 @@ func (w *Worker) RetryTask(actorID int64, sectorNum int64, taskType string) (str
 		Session:      session,
 	}
 
-	taskInfo, err := w.MinerApi.RetryTask(reqInfo)
+	taskInfo, err := w.queryRetry(reqInfo)
 
 	if err != nil {
 		return "", err
@@ -515,7 +509,7 @@ func (w *Worker) ChildProcess(taskInfo util.DbTaskInfo, binPath, session string)
 			cmd.Process.Kill()
 		})
 		if err != nil {
-			w.DeferMinerRecieve(*taskInfo.ActorID, *taskInfo.SectorNum, taskInfo.TaskType, session, []byte{}, err)
+			w.DeferMinerRecieve(*taskInfo.ActorID, *taskInfo.SectorNum, taskInfo.TaskType, session, util.TaskResult{}, err)
 		}
 	}()
 

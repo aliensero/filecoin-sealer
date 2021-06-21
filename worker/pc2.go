@@ -1,7 +1,6 @@
 package worker
 
 import (
-	"fmt"
 	"strings"
 	"time"
 
@@ -86,23 +85,18 @@ func (w *Worker) sealPreCommitPhase2(
 
 		log.Infof("sealPreCommitPhase2 sectorNum %d, minerID %d, cacheDirPath %s, sealedSectorPath %s", *taskInfo.SectorNum, *taskInfo.ActorID, taskInfo.CacheDirPath, taskInfo.SealedSectorPath)
 
-		// phase1Output, err := hex.DecodeString(taskInfo.Phase1OutputHex)
-
-		// if err != nil {
-		// 	return
-		// }
 		phase1Output := taskInfo.Phase1Output
 		sealedCID, unsealedCID, err = util.NsSealPreCommitPhase2(phase1Output, taskInfo.CacheDirPath, taskInfo.SealedSectorPath)
 
 	}()
 	w.handleProccess(timebeat, closeBeat, process, stopchnl, *taskInfo.ActorID, *taskInfo.SectorNum, taskType, &err, session)
 
-	w.DeferMinerRecieve(*taskInfo.ActorID, *taskInfo.SectorNum, taskType, session, []byte(fmt.Sprintf("%s-%s", sealedCID.String(), unsealedCID.String())), err)
+	w.DeferMinerRecieve(*taskInfo.ActorID, *taskInfo.SectorNum, taskType, session, util.TaskResult{SealedCID: sealedCID.String(), UnsealedCID: unsealedCID.String()}, err)
 
 	return sealedCID, unsealedCID, err
 }
 
-func (w *Worker) ProcessPrePhase2(actorID int64, sectorNum int64, binPath string) (ChildProcessInfo, error) {
+func (w *Worker) ProcessPrePhase2(actorID int64, sectorNum int64, binPath string) (util.ChildProcessInfo, error) {
 	session := uuid.New().String()
 
 	var err error
@@ -110,7 +104,7 @@ func (w *Worker) ProcessPrePhase2(actorID int64, sectorNum int64, binPath string
 
 	err = w.IncrementTask(taskType)
 	if err != nil {
-		return ChildProcessInfo{}, err
+		return util.ChildProcessInfo{}, err
 	}
 
 	defer func() {
@@ -133,23 +127,14 @@ func (w *Worker) ProcessPrePhase2(actorID int64, sectorNum int64, binPath string
 	}
 
 	taskInfo, err = w.queryTask(reqInfo)
-	if err != nil && !strings.Contains(err.Error(), "record not found") {
-		log.Errorf("worker %s error %v", taskType, err)
-		err2 := w.ConnMiner()
-		if err2 != nil {
-			return ChildProcessInfo{}, err2
-		}
+	if err != nil {
 		log.Info("MinerApi reconnect please retry")
-		return ChildProcessInfo{}, err
-	}
-
-	if err != nil && strings.Contains(err.Error(), "record not found") {
-		return ChildProcessInfo{}, err
+		return util.ChildProcessInfo{}, err
 	}
 
 	defer func() {
 		if err != nil {
-			w.DeferMinerRecieve(*taskInfo.ActorID, *taskInfo.SectorNum, taskType, session, []byte{}, err)
+			w.DeferMinerRecieve(*taskInfo.ActorID, *taskInfo.SectorNum, taskType, session, util.TaskResult{}, err)
 		}
 	}()
 
@@ -158,7 +143,7 @@ func (w *Worker) ProcessPrePhase2(actorID int64, sectorNum int64, binPath string
 	return childProcessInfo, err
 }
 
-func (w *Worker) processPrePhase2(taskInfo util.DbTaskInfo, binPath, session string) (ChildProcessInfo, error) {
+func (w *Worker) processPrePhase2(taskInfo util.DbTaskInfo, binPath, session string) (util.ChildProcessInfo, error) {
 	pid, err := w.ChildProcess(taskInfo, binPath, session)
-	return ChildProcessInfo{*taskInfo.ActorID, *taskInfo.SectorNum, pid}, err
+	return util.ChildProcessInfo{ActorID: *taskInfo.ActorID, SectorNum: *taskInfo.SectorNum, Pid: pid}, err
 }

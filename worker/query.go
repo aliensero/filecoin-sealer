@@ -9,35 +9,78 @@ func (w *Worker) queryTask(reqInfo util.RequestInfo) (util.DbTaskInfo, error) {
 	if w.MinerApi == nil {
 		return util.DbTaskInfo{}, xerrors.Errorf("w.MinerApi is nil")
 	}
-	return w.MinerApi.QueryTask(reqInfo)
+	qr, err := w.MinerApi.QueryTask(reqInfo)
+	if err != nil {
+		return util.DbTaskInfo{}, err
+	}
+
+	if qr.ResultCode == util.Err {
+		return util.DbTaskInfo{}, xerrors.Errorf(qr.Err)
+	}
+	return qr.Results[0], nil
 }
 
 func (w *Worker) queryRetry(reqInfo util.RequestInfo) (util.DbTaskInfo, error) {
 	if w.MinerApi == nil {
 		return util.DbTaskInfo{}, xerrors.Errorf("w.MinerApi is nil")
 	}
-	return w.MinerApi.RetryTask(reqInfo)
+	qr, err := w.MinerApi.QueryTask(reqInfo)
+	if err != nil {
+		return util.DbTaskInfo{}, err
+	}
+
+	if qr.ResultCode == util.Err {
+		return util.DbTaskInfo{}, xerrors.Errorf(qr.Err)
+	}
+
+	return qr.Results[0], nil
 }
 
 func (w *Worker) queryRetryByState(reqInfo util.RequestInfo) (util.DbTaskInfo, error) {
 	if w.MinerApi == nil {
 		return util.DbTaskInfo{}, xerrors.Errorf("w.MinerApi is nil")
 	}
-	return w.MinerApi.QueryRetry(reqInfo)
+	qr, err := w.MinerApi.QueryTask(reqInfo)
+	if err != nil {
+		return util.DbTaskInfo{}, err
+	}
+
+	if qr.ResultCode == util.Err {
+		return util.DbTaskInfo{}, xerrors.Errorf(qr.Err)
+	}
+
+	return qr.Results[0], nil
 }
 
 func (w *Worker) queryOnly(taskInfo util.DbTaskInfo) ([]util.DbTaskInfo, error) {
 	if w.MinerApi == nil {
-		return []util.DbTaskInfo{}, xerrors.Errorf("w.MinerApi is nil")
+		return nil, xerrors.Errorf("w.MinerApi is nil")
 	}
-	return w.MinerApi.QueryOnly(taskInfo)
+	qr, err := w.MinerApi.QueryOnly(taskInfo)
+	if err != nil {
+		return nil, err
+	}
+
+	if qr.ResultCode == util.Err {
+		return nil, xerrors.Errorf(qr.Err)
+	}
+	return qr.Results, nil
 }
 
 func (w *Worker) queryPoSt(reqInfo util.RequestInfo) ([]util.DbPostInfo, error) {
 	if w.MinerApi == nil {
-		return []util.DbPostInfo{}, xerrors.Errorf("websocket routine exiting")
+		return nil, xerrors.Errorf("websocket routine exiting")
 	}
-	return w.MinerApi.QueryToPoSt(reqInfo)
+	qr, err := w.MinerApi.QueryToPoSt(reqInfo)
+	if err != nil {
+		return nil, err
+	}
+
+	if qr.ResultCode == util.Err {
+		return nil, xerrors.Errorf(qr.Err)
+	}
+
+	return qr.Results, nil
 }
 
 func (w *Worker) queryMinerPoStInfo(actorID int64) (util.MinerPoStInfo, error) {

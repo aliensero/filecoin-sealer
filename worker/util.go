@@ -1,7 +1,6 @@
 package worker
 
 import (
-	"context"
 	"encoding/hex"
 	"fmt"
 	"os"
@@ -79,7 +78,7 @@ func (w *Worker) ShutdownReq(reqSession string) (string, error) {
 	return reqSession + " shutdown", nil
 }
 
-func deferMinerRecieve(minerApi *util.MinerAPI, minerUrl string, actorID int64, sectorNum int64, taskType string, session string, result []byte, processErr error) (jsonrpc.ClientCloser, error) {
+func deferMinerRecieve(minerApi *util.MinerAPI, minerUrl string, actorID int64, sectorNum int64, taskType string, session string, ret util.TaskResult, processErr error) (jsonrpc.ClientCloser, error) {
 
 	defer func() {
 		if err := recover(); err != nil {
@@ -91,9 +90,10 @@ func deferMinerRecieve(minerApi *util.MinerAPI, minerUrl string, actorID int64, 
 	var minerApiErr error
 
 	if processErr != nil {
-		minerApiErr = minerApi.RecieveTaskResult(actorID, sectorNum, taskType, session, true, []byte(processErr.Error()))
+		ret.CommString = processErr.Error()
+		minerApiErr = minerApi.RecieveTaskResult(actorID, sectorNum, taskType, session, true, ret)
 	} else {
-		minerApiErr = minerApi.RecieveTaskResult(actorID, sectorNum, taskType, session, false, result)
+		minerApiErr = minerApi.RecieveTaskResult(actorID, sectorNum, taskType, session, false, ret)
 	}
 
 	if minerApiErr != nil {
@@ -103,16 +103,17 @@ func deferMinerRecieve(minerApi *util.MinerAPI, minerUrl string, actorID int64, 
 			log.Warnf("MinerApi.RecieveTaskResult actorID %d taskType %s session %s retry", actorID, taskType, session)
 			if minerApi != nil {
 				if !minerApi.CheckServer() {
-					close, minerApi, reConnErr = ConnMiner(minerUrl)
+					close, minerApi, reConnErr = util.ConnMiner(minerUrl)
 				}
 			}
 			if reConnErr != nil {
 				log.Warnf("MinerApi.RecieveTaskResult actorID %d taskType %s session %s reConnect %d error %v", actorID, taskType, session, i, reConnErr)
 			} else {
 				if processErr != nil {
-					minerApiErr = minerApi.RecieveTaskResult(actorID, sectorNum, taskType, session, true, []byte(processErr.Error()))
+					ret.CommString = processErr.Error()
+					minerApiErr = minerApi.RecieveTaskResult(actorID, sectorNum, taskType, session, true, ret)
 				} else {
-					minerApiErr = minerApi.RecieveTaskResult(actorID, sectorNum, taskType, session, false, result)
+					minerApiErr = minerApi.RecieveTaskResult(actorID, sectorNum, taskType, session, false, ret)
 				}
 				if minerApiErr == nil {
 					break
@@ -123,24 +124,6 @@ func deferMinerRecieve(minerApi *util.MinerAPI, minerUrl string, actorID int64, 
 	log.Infof("worker util deferMinerRecieve complite actorID %d sectorNum %d taskType %s", actorID, sectorNum, taskType)
 	return close, minerApiErr
 
-}
-
-func ConnMiner(minerUrl string) (jsonrpc.ClientCloser, *util.MinerAPI, error) {
-
-	var mi util.MinerAPI
-	closer, err := jsonrpc.NewMergeClient(context.TODO(), minerUrl, "NSMINER",
-		[]interface{}{
-			&mi,
-		},
-		nil,
-		jsonrpc.WithNoReconnect(),
-	)
-	if err != nil {
-		log.Error(err)
-		return nil, nil, err
-	}
-	log.Infof("lotusMiner connect error %v", err)
-	return closer, &mi, nil
 }
 
 func TaskProcess(binPath string, minerapi string, session string, sectorNum int64, actorID int64) (*exec.Cmd, error) {
@@ -161,9 +144,9 @@ func TaskProcess(binPath string, minerapi string, session string, sectorNum int6
 	return cmd, err
 }
 
-func TaskRun(taskInfo util.DbTaskInfo, minerApi *util.MinerAPI, minerUrl string, session string) ([]byte, error, error) {
+func TaskRun(taskInfo util.DbTaskInfo, minerApi *util.MinerAPI, minerUrl string, session string) (util.TaskResult, error, error) {
 
-	var result []byte
+	var result util.TaskResult
 	var minerAPIErr, err error
 	defer func() {
 		if errReserve := recover(); errReserve != nil {
@@ -217,25 +200,26 @@ func TaskRun(taskInfo util.DbTaskInfo, minerApi *util.MinerAPI, minerUrl string,
 		}
 
 		phase1Out, err1 := util.NsSealPreCommitPhase1(util.NsRegisteredSealProof(taskInfo.ProofType), taskInfo.CacheDirPath, taskInfo.StagedSectorPath, taskInfo.SealedSectorPath, util.NsSectorNum(*taskInfo.SectorNum), util.NsActorID(*taskInfo.ActorID), util.NsSealRandomness(ticketBtyes[:]), pieces)
-		result = phase1Out
 		err = err1
 		if err1 != nil {
 			return result, minerAPIErr, err1
 		}
+		result.CommBytes = phase1Out
 		log.Infof("TaskRun PC1 phase1OutHex %v", hex.EncodeToString(phase1Out))
+
 	case util.PC2:
 		log.Infof("sealPreCommitPhase2 sectorNum %d, minerID %d, cacheDirPath %s, sealedSectorPath %s", *taskInfo.SectorNum, *taskInfo.ActorID, taskInfo.CacheDirPath, taskInfo.SealedSectorPath)
 		phase1Output := taskInfo.Phase1Output
 		sealedCID, unsealedCID, err1 := util.NsSealPreCommitPhase2(phase1Output, taskInfo.CacheDirPath, taskInfo.SealedSectorPath)
-		result = []byte(fmt.Sprintf("%s-%s", sealedCID.String(), unsealedCID.String()))
 		err = err1
 		if err1 != nil {
 			return result, minerAPIErr, err1
 		}
+		result.SealedCID = sealedCID.String()
+		result.UnsealedCID = unsealedCID.String()
 		log.Infof("TaskRun PC2 phase2Out %v", fmt.Sprintf("%s-%s", sealedCID.String(), unsealedCID.String()))
 
 	case util.C1:
-
 		sectorSizeInt, err1 := units.RAMInBytes(taskInfo.SealerProof)
 		err = err1
 		if err1 != nil {
@@ -279,7 +263,7 @@ func TaskRun(taskInfo util.DbTaskInfo, minerApi *util.MinerAPI, minerUrl string,
 		log.Infof(" params proofType %d sealedCID %s unsealedCID %s cacheDirPath %s sealedSectorPath %s sealedSectorPath sectorNum %d minerID %d ticket %v seed %v pieces %v", proofType, sealedCID, unsealedCID, taskInfo.CacheDirPath, taskInfo.SealedSectorPath, *taskInfo.ActorID, *taskInfo.SectorNum, ticketBytes, seedBytes, pieces)
 
 		phase1Output, err1 := util.NsSealCommitPhase1(proofType, sealedCID, unsealedCID, taskInfo.CacheDirPath, taskInfo.SealedSectorPath, util.NsSectorNum(*taskInfo.SectorNum), util.NsActorID(*taskInfo.ActorID), util.NsSealRandomness(ticketBytes[:]), util.NsSeed(seedBytes[:]), pieces)
-		result = phase1Output
+		result.CommBytes = phase1Output
 		err = err1
 		if err1 != nil {
 			return result, minerAPIErr, err1
@@ -288,7 +272,7 @@ func TaskRun(taskInfo util.DbTaskInfo, minerApi *util.MinerAPI, minerUrl string,
 	case util.C2:
 		phase1Output := taskInfo.C1Out
 		phase2Out, err1 := util.NsSealCommitPhase2(phase1Output, util.NsSectorNum(*taskInfo.SectorNum), util.NsActorID(*taskInfo.ActorID))
-		result = phase2Out
+		result.CommBytes = phase2Out
 		err = err1
 		if err1 != nil {
 			return result, minerAPIErr, err1

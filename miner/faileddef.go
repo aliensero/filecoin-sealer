@@ -8,7 +8,7 @@ import (
 func InitDbTaskFailed(db *gorm.DB) error {
 
 	taskFaileds := []util.DbTaskFailed{
-		util.DbTaskFailed{
+		{
 			TaskType:    util.PC1,
 			ErrOutline:  "timeout",
 			RetryCnt:    5,
@@ -16,7 +16,7 @@ func InitDbTaskFailed(db *gorm.DB) error {
 			UpdateState: util.RETRY,
 		},
 
-		util.DbTaskFailed{
+		{
 			TaskType:    util.PC2,
 			ErrOutline:  "timeout",
 			RetryCnt:    5,
@@ -24,7 +24,7 @@ func InitDbTaskFailed(db *gorm.DB) error {
 			UpdateState: util.RETRY,
 		},
 
-		util.DbTaskFailed{
+		{
 			TaskType:    util.C1,
 			ErrOutline:  "timeout",
 			RetryCnt:    5,
@@ -32,7 +32,7 @@ func InitDbTaskFailed(db *gorm.DB) error {
 			UpdateState: util.RETRY,
 		},
 
-		util.DbTaskFailed{
+		{
 			TaskType:    util.C2,
 			ErrOutline:  "timeout",
 			RetryCnt:    5,
@@ -40,7 +40,7 @@ func InitDbTaskFailed(db *gorm.DB) error {
 			UpdateState: util.RETRY,
 		},
 
-		util.DbTaskFailed{
+		{
 			TaskType:    util.PRECOMMIT,
 			ErrOutline:  "already been allocated (RetCode=16)",
 			RetryCnt:    99,
@@ -48,7 +48,7 @@ func InitDbTaskFailed(db *gorm.DB) error {
 			UpdateState: util.SUCCESS,
 		},
 
-		util.DbTaskFailed{
+		{
 			TaskType:    util.PRECOMMIT,
 			ErrOutline:  "already in mpool, increase GasPremium to",
 			RetryCnt:    99,
@@ -56,7 +56,7 @@ func InitDbTaskFailed(db *gorm.DB) error {
 			UpdateState: util.SUCCESS,
 		},
 
-		util.DbTaskFailed{
+		{
 			TaskType:    util.PRECOMMIT,
 			ErrOutline:  "message nonce too low",
 			RetryCnt:    99,
@@ -64,7 +64,7 @@ func InitDbTaskFailed(db *gorm.DB) error {
 			UpdateState: util.SUCCESS,
 		},
 
-		util.DbTaskFailed{
+		{
 			TaskType:    util.SEED,
 			ErrOutline:  "precommit info is not exists",
 			RetryCnt:    3,
@@ -72,7 +72,7 @@ func InitDbTaskFailed(db *gorm.DB) error {
 			UpdateState: util.SUCCESS,
 		},
 
-		util.DbTaskFailed{
+		{
 			TaskType:    util.COMMIT,
 			ErrOutline:  "reason: no pre-committed sector",
 			RetryCnt:    5,
@@ -80,7 +80,7 @@ func InitDbTaskFailed(db *gorm.DB) error {
 			UpdateState: util.RETRY,
 		},
 
-		util.DbTaskFailed{
+		{
 			TaskType:    util.COMMIT,
 			ErrOutline:  "message nonce too low",
 			RetryCnt:    99,
@@ -88,7 +88,7 @@ func InitDbTaskFailed(db *gorm.DB) error {
 			UpdateState: util.SUCCESS,
 		},
 
-		util.DbTaskFailed{
+		{
 			TaskType:    util.COMMIT,
 			ErrOutline:  "already in mpool, increase GasPremium to",
 			RetryCnt:    99,

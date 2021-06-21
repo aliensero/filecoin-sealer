@@ -5,13 +5,20 @@ import (
 	"golang.org/x/xerrors"
 )
 
-func (m *Miner) QueryOnly(taskInfo util.DbTaskInfo) ([]util.DbTaskInfo, error) {
+func (m *Miner) QueryOnly(taskInfo util.DbTaskInfo) (util.QueryTaskInfoResult, error) {
 	var taskInfoRet []util.DbTaskInfo
+	qr := util.QueryTaskInfoResult{}
 	err := m.Db.Where(taskInfo).Find(&taskInfoRet).Error
-	return taskInfoRet, err
+	if err != nil {
+		qr.ResultCode = util.Err
+		qr.Err = err.Error()
+		return qr, nil
+	}
+	qr.Results = taskInfoRet
+	return qr, nil
 }
 
-func (m *Miner) QueryTask(reqInfo util.RequestInfo) (util.DbTaskInfo, error) {
+func (m *Miner) QueryTask(reqInfo util.RequestInfo) (util.QueryTaskInfoResult, error) {
 
 	actorID := reqInfo.ActorID
 	taskType := reqInfo.TaskType
@@ -54,26 +61,33 @@ func (m *Miner) QueryTask(reqInfo util.RequestInfo) (util.DbTaskInfo, error) {
 
 	log.Infof("QueryTask reqInfo %v", reqInfo)
 
+	qr := util.QueryTaskInfoResult{}
 	tx := m.Db.Begin()
 	if sectorNum == -1 {
 		if taskType == util.PC2 || taskType == util.C1 {
 			err := tx.Where("actor_id = ? and task_type = ? and state = ? and worker_id = ?", actorID, taskType, util.INIT, workerID).First(&taskInfo).Error
 			if err != nil {
 				tx.Rollback()
-				return util.DbTaskInfo{}, err
+				qr.ResultCode = util.Err
+				qr.Err = err.Error()
+				return qr, nil
 			}
 		} else {
 			err := tx.Where("actor_id = ? and task_type = ? and state = ?", actorID, taskType, util.INIT).First(&taskInfo).Error
 			if err != nil {
 				tx.Rollback()
-				return util.DbTaskInfo{}, err
+				qr.ResultCode = util.Err
+				qr.Err = err.Error()
+				return qr, nil
 			}
 		}
 	} else {
 		err := tx.Where("actor_id = ? and sector_num = ?", actorID, sectorNum).First(&taskInfo).Error
 		if err != nil {
 			tx.Rollback()
-			return util.DbTaskInfo{}, err
+			qr.ResultCode = util.Err
+			qr.Err = err.Error()
+			return qr, nil
 		}
 	}
 
@@ -84,7 +98,9 @@ func (m *Miner) QueryTask(reqInfo util.RequestInfo) (util.DbTaskInfo, error) {
 
 	if err := tx.Where(taskInfo).Model(taskInfo).Updates(map[string]interface{}{"state": util.RUNING, "worker_id": workerID1, "host_name": hostName, "worker_listen": listen, "last_req_id": session}).Error; err != nil {
 		tx.Rollback()
-		return util.DbTaskInfo{}, err
+		qr.ResultCode = util.Err
+		qr.Err = err.Error()
+		return qr, nil
 	}
 
 	taskLog := util.DbTaskLog{
@@ -99,13 +115,16 @@ func (m *Miner) QueryTask(reqInfo util.RequestInfo) (util.DbTaskInfo, error) {
 	}
 	if err := tx.Create(&taskLog).Error; err != nil {
 		tx.Rollback()
-		return util.DbTaskInfo{}, err
+		qr.ResultCode = util.Err
+		qr.Err = err.Error()
+		return qr, nil
 	}
 	tx.Commit()
-	return taskInfo, nil
+	qr.Results = []util.DbTaskInfo{taskInfo}
+	return qr, nil
 }
 
-func (m *Miner) QueryRetry(reqInfo util.RequestInfo) (util.DbTaskInfo, error) {
+func (m *Miner) QueryRetry(reqInfo util.RequestInfo) (util.QueryTaskInfoResult, error) {
 	actorID := reqInfo.ActorID
 	taskType := reqInfo.TaskType
 	workerID := reqInfo.WorkerID
@@ -133,20 +152,24 @@ func (m *Miner) QueryRetry(reqInfo util.RequestInfo) (util.DbTaskInfo, error) {
 		m.requerycommitlock.Lock()
 		defer m.requerycommitlock.Unlock()
 	}
+	qr := util.QueryTaskInfoResult{}
 	var taskInfo util.DbTaskInfo
 	err := m.Db.Where("actor_id = ? and task_type = ? and worker_id = ? and state = ?", actorID, taskType, workerID, util.RETRY).Select("actor_id,sector_num,task_type").First(&taskInfo).Error
 	if err != nil {
-		return taskInfo, err
+		qr.ResultCode = util.Err
+		qr.Err = err.Error()
+		return qr, nil
 	}
 	err = m.Db.Where("actor_id = ? and task_type = ? and worker_id = ? and state = ? and sector_num = ?", actorID, taskType, workerID, util.RETRY, *taskInfo.SectorNum).Model(taskInfo).Update("state", util.RUNING).Error
 	if err != nil {
 		log.Errorf("Miner query actorID % sectorNum %d taskType %s retry error %v", actorID, *taskInfo.SectorNum, taskType, err)
 		err = xerrors.Errorf("record not found")
 	}
-	return taskInfo, err
+	qr.Results = []util.DbTaskInfo{taskInfo}
+	return qr, nil
 }
 
-func (m *Miner) RetryTask(reqInfo util.RequestInfo) (util.DbTaskInfo, error) {
+func (m *Miner) RetryTask(reqInfo util.RequestInfo) (util.QueryTaskInfoResult, error) {
 
 	actorID := reqInfo.ActorID
 	sectorNum := reqInfo.SectorNum
@@ -166,17 +189,22 @@ func (m *Miner) RetryTask(reqInfo util.RequestInfo) (util.DbTaskInfo, error) {
 		LastReqID:    reqID,
 	}
 
+	qr := util.QueryTaskInfoResult{}
 	tx := m.Db.Begin()
 
 	if taskType == util.PC1 || taskType == util.PC2 || taskType == util.C1 {
 		if err := tx.Where("actor_id = ? and sector_num = ? and worker_id = ?", actorID, sectorNum, workerID).Model(taskInfo).Updates(taskInfo).First(&taskInfo).Error; err != nil {
 			tx.Rollback()
-			return util.DbTaskInfo{}, err
+			qr.ResultCode = util.Err
+			qr.Err = err.Error()
+			return qr, nil
 		}
 	} else {
 		if err := tx.Where("actor_id = ? and sector_num = ?", actorID, sectorNum).Model(taskInfo).Updates(taskInfo).First(&taskInfo).Error; err != nil {
 			tx.Rollback()
-			return util.DbTaskInfo{}, err
+			qr.ResultCode = util.Err
+			qr.Err = err.Error()
+			return qr, nil
 		}
 	}
 	taskLog := util.DbTaskLog{
@@ -191,17 +219,27 @@ func (m *Miner) RetryTask(reqInfo util.RequestInfo) (util.DbTaskInfo, error) {
 	}
 	if err := tx.Create(&taskLog).Error; err != nil {
 		tx.Rollback()
-		return util.DbTaskInfo{}, err
+		qr.ResultCode = util.Err
+		qr.Err = err.Error()
+		return qr, nil
 	}
 	tx.Commit()
-	return taskInfo, nil
+	qr.ResultCode = util.Ok
+	qr.Results = []util.DbTaskInfo{taskInfo}
+	return qr, nil
 }
 
-func (m *Miner) QueryToPoSt(reqInfo util.RequestInfo) ([]util.DbPostInfo, error) {
+func (m *Miner) QueryToPoSt(reqInfo util.RequestInfo) (util.QueryPostInfoResult, error) {
 	actorID := reqInfo.ActorID
-	workerID := reqInfo.WorkerID
 	sectors := reqInfo.Sectors
 	var postInfo []util.DbPostInfo
-	err := m.Db.Where("actor_id = ? and worker_id = ? and state = ? and sector_num in ("+sectors+")", actorID, workerID, util.SUCCESS).Find(&postInfo).Error
-	return postInfo, err
+	err := m.Db.Where("actor_id = ? and state = ? and sector_num in ("+sectors+")", actorID, util.SUCCESS).Find(&postInfo).Error
+	qr := util.QueryPostInfoResult{}
+	if err != nil {
+		qr.ResultCode = util.Err
+		qr.Err = err.Error()
+		return qr, nil
+	}
+	qr.Results = postInfo
+	return qr, err
 }

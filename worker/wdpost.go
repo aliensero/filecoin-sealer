@@ -14,22 +14,15 @@ const (
 	PRI = "pri"
 )
 
-type ActorPoStInfo struct {
-	AddrInfo string
-	AddrType string
-	DiOpen   util.NsChainEpoch
-}
-
 func (w *Worker) AddPoStActor(actorID int64, addrinfo string, addrtype string) (string, error) {
-
-	w.PoStMiner[actorID] = ActorPoStInfo{AddrInfo: addrinfo, AddrType: addrtype}
+	w.PoStMiner[actorID] = util.ActorPoStInfo{AddrInfo: addrinfo, AddrType: addrtype}
 	log.Infof("AddPoStActor f0%v", actorID)
 	return fmt.Sprintf("f0%d", actorID), nil
 }
 
 func (w *Worker) DisplayPoStActor() (string, error) {
 	key := "PoSt actors:"
-	for k, _ := range w.PoStMiner {
+	for k := range w.PoStMiner {
 		key = key + " " + fmt.Sprintf("f0%d", k)
 	}
 	return key, nil

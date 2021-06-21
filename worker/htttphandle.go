@@ -57,12 +57,27 @@ func (wl *Worker) RemoteGetSector(w http.ResponseWriter, r *http.Request) {
 		ActorID:   &actorID,
 		SectorNum: &sectorNum,
 	}
-	taskInfos, err := wl.MinerApi.QueryOnly(taskInfo)
-	if err != nil || len(taskInfos) <= 0 {
-		log.Errorf("taskInfos len %d error %v", len(taskInfos), err)
+	qr, err := wl.MinerApi.QueryOnly(taskInfo)
+	if err != nil {
+		log.Errorf("taskInfos error %v", err)
 		w.WriteHeader(500)
 		return
 	}
+
+	if qr.ResultCode == util.Err {
+		log.Error(qr.Err)
+		w.WriteHeader(500)
+		return
+	}
+
+	taskInfos := qr.Results
+
+	if len(taskInfos) < 1 {
+		log.Error("len(taskInfos)=0")
+		w.WriteHeader(500)
+		return
+	}
+
 	taskInfo = taskInfos[0]
 	path := ""
 	if pathtype == "cache" {
@@ -180,9 +195,23 @@ func (wl *Worker) RemoteDelSector(w http.ResponseWriter, r *http.Request) {
 		ActorID:   &actorID,
 		SectorNum: &sectorNum,
 	}
-	taskInfos, err := wl.MinerApi.QueryOnly(taskInfo)
-	if err != nil || len(taskInfos) <= 0 {
-		log.Errorf("taskInfos len %d error %v", len(taskInfos), err)
+	qr, err := wl.MinerApi.QueryOnly(taskInfo)
+	if err != nil {
+		log.Errorf("taskInfos error %v", err)
+		w.WriteHeader(500)
+		return
+	}
+
+	if qr.ResultCode == util.Err {
+		log.Error(qr.Err)
+		w.WriteHeader(500)
+		return
+	}
+
+	taskInfos := qr.Results
+
+	if len(taskInfos) < 1 {
+		log.Error("len(taskInfos)=0")
 		w.WriteHeader(500)
 		return
 	}

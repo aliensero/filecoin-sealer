@@ -167,12 +167,12 @@ func (w *Worker) sealPreCommitPhase1(
 
 	w.handleProccess(timebeat, closeBeat, process, stopchnl, *taskInfo.ActorID, *taskInfo.SectorNum, taskType, &err, session)
 
-	w.DeferMinerRecieve(*taskInfo.ActorID, *taskInfo.SectorNum, taskType, session, phase1Output, err)
+	w.DeferMinerRecieve(*taskInfo.ActorID, *taskInfo.SectorNum, taskType, session, util.TaskResult{CommBytes: phase1Output}, err)
 
 	return phase1Output, err
 }
 
-func (w *Worker) ProcessPrePhase1(actorID int64, sectorNum int, binPath string) (ChildProcessInfo, error) {
+func (w *Worker) ProcessPrePhase1(actorID int64, sectorNum int, binPath string) (util.ChildProcessInfo, error) {
 
 	session := uuid.New().String()
 
@@ -181,7 +181,7 @@ func (w *Worker) ProcessPrePhase1(actorID int64, sectorNum int, binPath string) 
 
 	err = w.IncrementTask(taskType)
 	if err != nil {
-		return ChildProcessInfo{}, err
+		return util.ChildProcessInfo{}, err
 	}
 
 	defer func() {
@@ -208,19 +208,19 @@ func (w *Worker) ProcessPrePhase1(actorID int64, sectorNum int, binPath string) 
 		log.Errorf("worker %s error %v", taskType, err)
 		err2 := w.ConnMiner()
 		if err2 != nil {
-			return ChildProcessInfo{}, err2
+			return util.ChildProcessInfo{}, err2
 		}
 		log.Info("MinerApi reconnect please retry")
-		return ChildProcessInfo{}, err
+		return util.ChildProcessInfo{}, err
 	}
 
 	if err != nil && strings.Contains(err.Error(), "record not found") {
-		return ChildProcessInfo{}, err
+		return util.ChildProcessInfo{}, err
 	}
 
 	defer func() {
 		if err != nil {
-			w.DeferMinerRecieve(*taskInfo.ActorID, *taskInfo.SectorNum, taskType, session, []byte{}, err)
+			w.DeferMinerRecieve(*taskInfo.ActorID, *taskInfo.SectorNum, taskType, session, util.TaskResult{}, err)
 		}
 	}()
 	childProcessInfo, err := w.processPrePhase1(taskInfo, binPath, session)
@@ -228,7 +228,7 @@ func (w *Worker) ProcessPrePhase1(actorID int64, sectorNum int, binPath string) 
 	return childProcessInfo, err
 }
 
-func (w *Worker) processPrePhase1(taskInfo util.DbTaskInfo, binPath, session string) (ChildProcessInfo, error) {
+func (w *Worker) processPrePhase1(taskInfo util.DbTaskInfo, binPath, session string) (util.ChildProcessInfo, error) {
 
 	var err error
 	sealedBasePath := filepath.Dir(taskInfo.SealedSectorPath)
@@ -237,7 +237,7 @@ func (w *Worker) processPrePhase1(taskInfo util.DbTaskInfo, binPath, session str
 		if !os.IsExist(err) {
 			if err := os.Mkdir(sealedBasePath, 0755); err != nil { // nolint:gosec
 				log.Error(xerrors.Errorf("mkdir sealed path %s error: %v", sealedBasePath, err))
-				return ChildProcessInfo{}, err
+				return util.ChildProcessInfo{}, err
 			}
 		}
 	}
@@ -246,21 +246,21 @@ func (w *Worker) processPrePhase1(taskInfo util.DbTaskInfo, binPath, session str
 
 	if err != nil {
 		log.Error(xerrors.Errorf("ensuring sealed file %s exists: %w", taskInfo.SealedSectorPath, err))
-		return ChildProcessInfo{}, err
+		return util.ChildProcessInfo{}, err
 	}
 	if err := e.Close(); err != nil {
 		log.Error(err)
-		return ChildProcessInfo{}, err
+		return util.ChildProcessInfo{}, err
 	}
 
 	if err := os.MkdirAll(taskInfo.CacheDirPath, 0755); err != nil { // nolint
 		if !os.IsExist(err) {
 			log.Error(xerrors.Errorf("mkdir cache path %s error: %v", taskInfo.CacheDirPath, err))
-			return ChildProcessInfo{}, err
+			return util.ChildProcessInfo{}, err
 		}
 	}
 
 	pid, err := w.ChildProcess(taskInfo, binPath, session)
 
-	return ChildProcessInfo{*taskInfo.ActorID, *taskInfo.SectorNum, pid}, err
+	return util.ChildProcessInfo{ActorID: *taskInfo.ActorID, SectorNum: *taskInfo.SectorNum, Pid: pid}, err
 }
