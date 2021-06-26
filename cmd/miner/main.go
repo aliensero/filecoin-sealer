@@ -31,6 +31,7 @@ func main() {
 		p2p.SubCmd,
 		p2p.TranCmd,
 		p2p.ComputeReceis,
+		taskAutoCmd,
 		taskTriggerCmd,
 		addTaskCmd,
 		createminerCmd,
@@ -156,6 +157,7 @@ var daemonCmd = &cli.Command{
 			LotusToken:       cctx.String("lotus-token"),
 			SyncPoStMap:      miner.NewSyncPostMap(),
 			PoStMiner:        make(map[int64]util.ActorPoStInfo),
+			ActorTask:        make(map[int64]string),
 		}
 		rpcServer := jsonrpc.NewServer()
 		mux := mux.NewRouter()
@@ -263,6 +265,73 @@ var taskTriggerCmd = &cli.Command{
 		}
 		if err == nil {
 			log.Info(result)
+		}
+		return err
+	},
+}
+
+var taskAutoCmd = &cli.Command{
+	Name: "taskauto",
+	Flags: []cli.Flag{
+		&cli.BoolFlag{
+			Name:  "add",
+			Usage: "add to server",
+		},
+		&cli.BoolFlag{
+			Name:  "del",
+			Usage: "delete from server",
+		},
+		&cli.BoolFlag{
+			Name:  "dis",
+			Usage: "display from server",
+		},
+		&cli.StringFlag{
+			Name:    "minerapi",
+			Usage:   "miner api",
+			EnvVars: []string{"MINER_API"},
+			Value:   "ws://127.0.0.1:1234/rpc/v0",
+		},
+	},
+	Action: func(cctx *cli.Context) error {
+
+		if cctx.Bool("add") && cctx.Args().Len() < 2 {
+			return fmt.Errorf("[actorid] [privatkey]")
+		}
+
+		close, minerApi, err := util.ConnMiner(cctx.String("minerapi"))
+		if err != nil {
+			return err
+		}
+		defer close()
+
+		ai, err := strconv.ParseInt(cctx.Args().Get(0), 10, 64)
+		if err != nil {
+			return err
+		}
+
+		pk := cctx.Args().Get(1)
+
+		if cctx.Bool("del") && ai != -1 {
+			err = minerApi.DeleteFromServer(ai)
+		}
+
+		if cctx.Bool("add") && ai != -1 {
+			if pk == "" {
+				fmt.Print("enter private key:")
+				buf, err := term.ReadPassword(int(os.Stdin.Fd()))
+				if err != nil {
+					return err
+				}
+				pk = string(buf)
+			}
+			err = minerApi.AddToServer(ai, pk)
+		}
+		if cctx.Bool("dis") {
+			var info interface{}
+			info, err = minerApi.DisplayServer()
+			if err == nil {
+				log.Info(info)
+			}
 		}
 		return err
 	},
@@ -438,8 +507,8 @@ var createminerCmd = &cli.Command{
 		},
 		&cli.Int64Flag{
 			Name:  "type",
-			Usage: "seal proof type defaul 3 (32GiB)",
-			Value: 3,
+			Usage: "seal proof type defaul 8 (32GiB)",
+			Value: 8,
 		},
 		&cli.StringFlag{
 			Name:    "minerapi",

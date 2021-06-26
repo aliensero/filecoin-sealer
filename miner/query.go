@@ -164,6 +164,9 @@ func (m *Miner) QueryRetry(reqInfo util.RequestInfo) (util.QueryTaskInfoResult, 
 	if err != nil {
 		log.Errorf("Miner query actorID % sectorNum %d taskType %s retry error %v", actorID, *taskInfo.SectorNum, taskType, err)
 		err = xerrors.Errorf("record not found")
+		qr.ResultCode = util.Err
+		qr.Err = err.Error()
+		return qr, nil
 	}
 	qr.Results = []util.DbTaskInfo{taskInfo}
 	return qr, nil

@@ -36,6 +36,7 @@ func main() {
 		unSealedFileCmd,
 		taskRunCmd,
 		recoveryCmd,
+		taskAutoCmd,
 		taskTriggerCmd,
 		addPostCmd,
 	}
@@ -176,10 +177,10 @@ var runCmd = &cli.Command{
 		}
 
 		runMap := map[string]*worker.TaskRuningInfo{
-			util.PC1: &worker.TaskRuningInfo{},
-			util.PC2: &worker.TaskRuningInfo{},
-			util.C1:  &worker.TaskRuningInfo{},
-			util.C2:  &worker.TaskRuningInfo{},
+			util.PC1: {},
+			util.PC2: {},
+			util.C1:  {},
+			util.C2:  {},
 		}
 
 		extrListen := cctx.String("extrlisten")
@@ -203,6 +204,7 @@ var runCmd = &cli.Command{
 			TaskTimeOut:   timeOut,
 			ExtrListen:    extrListen,
 			PoStMiner:     make(map[int64]util.ActorPoStInfo),
+			ActorTask:     make(map[int64][]string),
 		}
 
 		rpcServer.Register("NSWORKER", workerInstan)
@@ -447,6 +449,68 @@ var taskTriggerCmd = &cli.Command{
 		}
 		if err == nil {
 			log.Info(result)
+		}
+		return err
+	},
+}
+
+var taskAutoCmd = &cli.Command{
+	Name:  "taskauto",
+	Usage: "[PC1] [PC2] [C1] [C2]",
+	Flags: []cli.Flag{
+		&cli.Int64Flag{
+			Name:  "actorid",
+			Usage: "actor ID",
+			Value: -1,
+		},
+		&cli.BoolFlag{
+			Name:  "add",
+			Usage: "add to server",
+		},
+		&cli.BoolFlag{
+			Name:  "del",
+			Usage: "delete from server",
+		},
+		&cli.BoolFlag{
+			Name:  "dis",
+			Usage: "display from server",
+		},
+		&cli.StringFlag{
+			Name:    "workerapi",
+			Usage:   "worker api",
+			EnvVars: []string{"WORKER_API"},
+			Value:   "ws://127.0.0.1:3456/rpc/v0",
+		},
+	},
+	Action: func(cctx *cli.Context) error {
+
+		close, workerApi, err := util.ConnectWorker(cctx.String("workerapi"))
+		if err != nil {
+			return err
+		}
+		defer close()
+
+		if cctx.Bool("add") && cctx.Args().Len() < 1 {
+			return fmt.Errorf("[PC1] [PC2] [C1] [C2]")
+		}
+
+		ai := cctx.Int64("actorid")
+
+		if cctx.Bool("del") && ai != -1 {
+			err = workerApi.DeleteFromServer(ai)
+		}
+
+		if cctx.Bool("add") && ai != -1 {
+			tasks := cctx.Args().Slice()
+			err = workerApi.AddToServer(ai, tasks)
+		}
+
+		if cctx.Bool("dis") {
+			var info interface{}
+			info, err = workerApi.DisplayServer(ai)
+			if err == nil {
+				log.Info(info)
+			}
 		}
 		return err
 	},

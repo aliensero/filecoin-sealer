@@ -24,14 +24,14 @@ var MiningCmd = &cli.Command{
 		},
 		&cli.StringFlag{
 			Name:    "lotusapi",
-			Usage:   "lotus api",
-			Value:   "https://filestar.info/rpc/v0",
+			Usage:   "lotus api [https://calibration.node.glif.io] [https://api.node.glif.io]",
 			EnvVars: []string{"LOTUS_API"},
+			Value:   "https://calibration.node.glif.io",
 		},
 		&cli.StringFlag{
 			Name:  "netname",
-			Usage: "networker name",
-			Value: "testnetnet",
+			Usage: "networker name [calibrationnet] [testnetnet]",
+			Value: "calibrationnet",
 		},
 	},
 	Action: func(cctx *cli.Context) error {

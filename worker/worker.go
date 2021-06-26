@@ -44,6 +44,8 @@ type Worker struct {
 	TaskTimeOut map[string]int64
 
 	PoStMiner map[int64]util.ActorPoStInfo
+
+	ActorTask map[int64][]string
 }
 
 type FailedTask struct {

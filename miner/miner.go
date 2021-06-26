@@ -52,32 +52,33 @@ type Miner struct {
 	requerycommitlock sync.Mutex
 
 	PoStMiner map[int64]util.ActorPoStInfo
+	ActorTask map[int64]string
 }
 
-type ActorNonceLock struct {
-	mut   sync.Mutex
-	nonce uint64
-}
+// type ActorNonceLock struct {
+// 	mut   sync.Mutex
+// 	nonce uint64
+// }
 
-func (anl *ActorNonceLock) set(nonce uint64) {
-	anl.mut.Lock()
-	defer anl.mut.Unlock()
-	anl.nonce = nonce
-}
+// func (anl *ActorNonceLock) set(nonce uint64) {
+// 	anl.mut.Lock()
+// 	defer anl.mut.Unlock()
+// 	anl.nonce = nonce
+// }
 
-func (anl *ActorNonceLock) increment() {
-	anl.mut.Lock()
-	defer anl.mut.Unlock()
-	anl.nonce += 1
-}
+// func (anl *ActorNonceLock) increment() {
+// 	anl.mut.Lock()
+// 	defer anl.mut.Unlock()
+// 	anl.nonce += 1
+// }
 
-func (anl *ActorNonceLock) decrement() {
-	anl.mut.Lock()
-	defer anl.mut.Unlock()
-	if anl.nonce > 0 {
-		anl.nonce -= 1
-	}
-}
+// func (anl *ActorNonceLock) decrement() {
+// 	anl.mut.Lock()
+// 	defer anl.mut.Unlock()
+// 	if anl.nonce > 0 {
+// 		anl.nonce -= 1
+// 	}
+// }
 
 func (m *Miner) CheckServer() bool {
 	return true
@@ -236,19 +237,19 @@ func (m *Miner) GetSeedRand(actorID int64, sectorNum int64) (string, error) {
 		if err != nil {
 			return
 		}
-		if &pci == nil {
-			for {
-				pci, err = m.LotusApi.StateSectorPreCommitInfo(context.TODO(), minerAddr, util.NsSectorNum(*taskInfo.SectorNum), tipset.Key())
-				if err != nil {
-					return
-				}
-				if &pci == nil {
-					time.Sleep(30 * time.Second)
-					continue
-				}
-				break
-			}
-		}
+		// if &pci == nil {
+		// 	for {
+		// 		pci, err = m.LotusApi.StateSectorPreCommitInfo(context.TODO(), minerAddr, util.NsSectorNum(*taskInfo.SectorNum), tipset.Key())
+		// 		if err != nil {
+		// 			return
+		// 		}
+		// 		if &pci == nil {
+		// 			time.Sleep(30 * time.Second)
+		// 			continue
+		// 		}
+		// 		break
+		// 	}
+		// }
 
 		// randHeight := pci.PreCommitEpoch + policy.GetPreCommitChallengeDelay()
 		randHeight := pci.PreCommitEpoch + util.NsChainEpoch(m.WaitSeedEpoch)

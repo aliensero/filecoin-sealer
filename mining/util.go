@@ -10,7 +10,6 @@ import (
 	"gitlab.ns/lotus-worker/util"
 
 	"github.com/filecoin-project/lotus/build"
-	pubsub "github.com/libp2p/go-libp2p-pubsub"
 	"golang.org/x/xerrors"
 )
 
@@ -18,6 +17,7 @@ type MiningResult struct {
 	BlockHeader *util.NsBlockHeader
 	BaseTipSet  *util.NsTipSet
 	Ticket      *util.NsTicket
+	ParentMsg   []*util.NsMessage
 }
 
 func MinerMining(ctx context.Context, blkh *util.NsBlockHeader, fa util.LotusAPI, mr util.NsAddress, ki *util.Key, sealedPaths []string) (*MiningResult, error) {
@@ -112,7 +112,7 @@ func MinerMining(ctx context.Context, blkh *util.NsBlockHeader, fa util.LotusAPI
 		return nil, xerrors.Errorf("MinerMining NsIDFromAddress miner %v error %v", mr, err)
 	}
 
-	proofType := util.NsSealProofInfos[mbi.Sectors[0].SealProof].WinningPoStProof
+	proofType := util.NsSealProofInfos[util.NsRegisteredSealProof(mbi.Sectors[0].SealProof)].WindowPoStProof
 
 	buf := new(bytes.Buffer)
 	if err := mr.MarshalCBOR(buf); err != nil {
@@ -163,7 +163,7 @@ loop:
 		ParentMessageReceipts: rectroot,
 	}
 
-	ret := &MiningResult{blkHead, curTipset, ticket}
+	ret := &MiningResult{blkHead, curTipset, ticket, parentMsg}
 
 	return ret, nil
 
@@ -242,9 +242,7 @@ func getElectionProof(ctx context.Context, mbi *util.NsMiningBaseInfo, rebaseDat
 	return ep, nil
 }
 
-type publishBlockMsgCb func(pmsg []*util.NsMessage, miningRet *MiningResult) error
-
-func publishBlockMsg(ctx context.Context, fa util.LotusAPI, miningRet *MiningResult, cbs util.NsBlockstore, pmsg []*util.NsMessage, ki *util.Key, pub *pubsub.PubSub, topic string) error {
+func publishBlockMsg(ctx context.Context, fa *util.P2pLotusAPI, miningRet *MiningResult, ki *util.Key) error {
 
 	blkHead := miningRet.BlockHeader
 	curts := miningRet.BaseTipSet
@@ -293,7 +291,7 @@ func publishBlockMsg(ctx context.Context, fa util.LotusAPI, miningRet *MiningRes
 	blkHead.ParentWeight = parentWeight
 
 	totalLimit := int64(0)
-	for _, m := range pmsg {
+	for _, m := range miningRet.ParentMsg {
 		totalLimit += m.GasLimit
 	}
 	blkHead.ParentBaseFee = util.NsComputeNextBaseFee(curts.Blocks()[0].ParentBaseFee, totalLimit, len(curts.Blocks()), curts.Height())
@@ -336,7 +334,7 @@ func publishBlockMsg(ctx context.Context, fa util.LotusAPI, miningRet *MiningRes
 	baseT := time.Unix(int64(deadline), 0)
 	build.Clock.Sleep(build.Clock.Until(baseT))
 
-	err = pub.Publish(topic, b)
+	err = fa.PublishBlockMsg(ctx, b)
 	if err != nil {
 		return err
 	}
@@ -350,10 +348,10 @@ func publishBlockMsg(ctx context.Context, fa util.LotusAPI, miningRet *MiningRes
 
 func GenerateWinningFallbackSectorChallenges(mr util.NsAddress, rebaseData []byte, round util.NsChainEpoch, mbi *util.NsMiningBaseInfo, pts *util.NsTipSet) (*util.NsFallbackChallenges, error) {
 
-	proofType := util.NsSealProofInfos[mbi.Sectors[0].SealProof].WinningPoStProof
+	proofType := util.NsSealProofInfos[util.NsRegisteredSealProof(mbi.Sectors[0].SealProof)].WindowPoStProof
 	actorID, err := util.NsIDFromAddress(mr)
 	if err != nil {
-		//TODO
+		return nil, err
 	}
 	sectorIds := make([]util.NsSectorNum, len(mbi.Sectors))
 	for i, s := range mbi.Sectors {

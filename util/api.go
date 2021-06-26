@@ -84,6 +84,10 @@ type MinerAPI struct {
 	QueryMinerPoStInfo  func(actorID int64) (MinerPoStInfo, error)
 	TestStartSubmitPoSt func(trnmsg PoStTransfer) (int, error)
 
+	AddToServer      func(actorID int64, privatkey string) error
+	DeleteFromServer func(actorID int64) error
+	DisplayServer    func() (interface{}, error)
+
 	GetSeedRand              func(actorID int64, sectorNum int64) (string, error)
 	SendPreCommitByPrivatKey func(prihex string, actorID int64, sectorNum int64, deposit string) (string, error)
 	SendCommitByPrivatKey    func(prihex string, actorID int64, sectorNum int64, deposit string) (string, error)
@@ -169,6 +173,10 @@ func ConnectWorker(url string) (jsonrpc.ClientCloser, *WorkerAPI, error) {
 }
 
 type WorkerAPI struct {
+	AddToServer      func(actorID int64, tasks []string) error
+	DeleteFromServer func(actorID int64) error
+	DisplayServer    func(actorID int64) (interface{}, error)
+
 	ProcessPrePhase1    func(actorID int64, sectorNum int64, binPath string) (ChildProcessInfo, error)
 	ProcessPrePhase2    func(actorID int64, sectorNum int64, binPath string) (ChildProcessInfo, error)
 	ProcessCommitPhase1 func(actorID int64, sectorNum int64, binPath string) (ChildProcessInfo, error)

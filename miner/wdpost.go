@@ -416,7 +416,6 @@ loop:
 	}
 
 	log.Errorf("PoStInfo submitPoSt actor %v minerID %d deadline %d partionIndex %d cid %v", actor, minerID, deadline, index, retCid)
-	return
 }
 
 func (m *Miner) AbortPoSt(actorID int64) (string, error) {

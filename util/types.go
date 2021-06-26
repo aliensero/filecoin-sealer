@@ -329,6 +329,28 @@ func (a *P2pLotusAPI) MpoolPush(ctx context.Context, m *types.SignedMessage) (ci
 	return m.Cid(), nil
 }
 
+func (a *P2pLotusAPI) PublishBlockMsg(ctx context.Context, b []byte) error {
+
+	tf := time.After(3 * time.Second)
+loop:
+	for {
+		select {
+		case <-tf:
+			break loop
+		default:
+			for _, p := range a.bootPeers {
+				if err := a.host.Connect(ctx, p); err == nil {
+					break loop
+				} else {
+					log.Errorf("connect peer %v error %v", p, err)
+				}
+			}
+		}
+	}
+	topic := build.BlocksTopic(a.nn)
+	return a.sub.Publish(topic, b)
+}
+
 func NewP2pLotusAPI(a api.FullNode, nn dtypes.NetworkName) (*P2pLotusAPI, error) {
 	api := &P2pLotusAPI{}
 	h, sub, ps, _ := NewPubSub()

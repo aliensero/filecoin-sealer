@@ -11,7 +11,7 @@ import (
 
 var log = logging.Logger("mining")
 
-func MinerServerNotify(ctx context.Context, fa util.LotusAPI, mr util.NsAddress, ki *util.Key, sealedPaths []string) {
+func MinerServerNotify(ctx context.Context, fa *util.P2pLotusAPI, mr util.NsAddress, ki *util.Key, sealedPaths []string) {
 	lastHeight := util.NsChainEpoch(0)
 	for {
 		ts, err := fa.ChainHead(ctx)
@@ -22,9 +22,14 @@ func MinerServerNotify(ctx context.Context, fa util.LotusAPI, mr util.NsAddress,
 		}
 		if lastHeight < ts.Height() {
 			go func() {
-				_, err := MinerMining(ctx, ts.Blocks()[0], fa, mr, ki, sealedPaths)
+				ret, err := MinerMining(ctx, ts.Blocks()[0], fa.FullNode, mr, ki, sealedPaths)
 				if err != nil {
-					log.Errorf("MiningCallBackFun error %v", err)
+					log.Errorf("MinerMining error %v", err)
+					return
+				}
+				err = publishBlockMsg(ctx, fa, ret, ki)
+				if err != nil {
+					log.Errorf("publishBlockMsg error %v", err)
 					return
 				}
 			}()
