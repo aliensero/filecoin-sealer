@@ -29,6 +29,7 @@ import (
 	"github.com/filecoin-project/go-address"
 	"github.com/filecoin-project/lotus/api"
 	"github.com/filecoin-project/lotus/api/client"
+	"github.com/filecoin-project/lotus/api/v0api"
 	"github.com/filecoin-project/lotus/blockstore"
 	"github.com/filecoin-project/lotus/build"
 	"github.com/filecoin-project/lotus/chain/actors"
@@ -197,10 +198,11 @@ var NsWinningPoStProofTypeFromWindowPoStProofType = miner.WinningPoStProofTypeFr
 type NsMiningBase = lminer.MiningBase
 
 type NsMessageSendSpec = api.MessageSendSpec
-type LotusAPI = api.FullNode
 type NsPartition = api.Partition
 type NsMiningBaseInfo = api.MiningBaseInfo
 type NsBlockTemplate = api.BlockTemplate
+
+type LotusAPI = v0api.FullNode
 
 var NsNewAPIBlockstore = blockstore.NewAPIBlockstore
 var NsNewMemory = blockstore.NewMemory
@@ -210,7 +212,7 @@ type NsBlockstore = blockstore.Blockstore
 var NsCurrentNetwork = address.CurrentNetwork
 var NsMainNet = address.Mainnet
 
-var NsNewFullNodeRPC = client.NewFullNodeRPC
+var NsNewFullNodeRPC = client.NewFullNodeRPCV0
 
 type NsDeadLineInfo = dline.Info
 

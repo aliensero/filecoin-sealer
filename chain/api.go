@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/filecoin-project/go-jsonrpc"
-	"github.com/filecoin-project/lotus/api"
 	"github.com/filecoin-project/lotus/build"
 	"github.com/filecoin-project/lotus/chain/types"
 	"github.com/ipfs/go-cid"
@@ -15,15 +14,16 @@ import (
 	"github.com/libp2p/go-libp2p-core/peer"
 	dht "github.com/libp2p/go-libp2p-kad-dht"
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
+	"gitlab.ns/lotus-worker/util"
 )
 
 type P2pAPI struct {
 	Publish func(ctx context.Context, b []byte) error
 }
 
-func NewP2pLotusAPI(a api.FullNode) (*P2pLotusAPI, error) {
+func NewP2pLotusAPI(a util.LotusAPI) (*P2pLotusAPI, error) {
 	api := &P2pLotusAPI{}
-	api.FullNode = a
+	api.LotusAPI = a
 
 	ctx := context.TODO()
 
@@ -110,7 +110,7 @@ func NewP2pLotusAPI(a api.FullNode) (*P2pLotusAPI, error) {
 }
 
 type P2pLotusAPI struct {
-	api.FullNode
+	util.LotusAPI
 
 	host      host.Host
 	sub       *pubsub.PubSub

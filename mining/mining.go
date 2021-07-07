@@ -34,7 +34,7 @@ func MinerServerNotify(ctx context.Context, fa *chain.P2pLotusAPI, mr util.NsAdd
 		hi := <-notify
 
 		go func() {
-			ret, err := MinerMining(ctx, hi, fa.FullNode, mr, ki, sealedPaths)
+			ret, err := MinerMining(ctx, hi, fa.LotusAPI, mr, ki, sealedPaths)
 			if err != nil {
 				log.Errorf("MinerMining error %v", err)
 				return
