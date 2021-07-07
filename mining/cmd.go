@@ -5,6 +5,7 @@ import (
 	"os"
 
 	"github.com/urfave/cli/v2"
+	"gitlab.ns/lotus-worker/chain"
 	"gitlab.ns/lotus-worker/util"
 	"golang.org/x/term"
 	"golang.org/x/xerrors"
@@ -25,8 +26,8 @@ var MiningCmd = &cli.Command{
 		&cli.StringFlag{
 			Name:    "lotusapi",
 			Usage:   "lotus api [https://calibration.node.glif.io] [https://api.node.glif.io]",
-			EnvVars: []string{"LOTUS_API"},
 			Value:   "https://calibration.node.glif.io",
+			EnvVars: []string{"LOTUS_API"},
 		},
 		&cli.StringFlag{
 			Name:  "netname",
@@ -59,10 +60,11 @@ var MiningCmd = &cli.Command{
 		defer close()
 		nn := cctx.String("netname")
 		log.Infof("p2p networker name %s", nn)
-		ffa, err := util.NewP2pLotusAPI(fa, util.NsNetworkName(nn))
+		ffa, err := chain.NewP2pLotusAPI(fa)
 		if err != nil {
 			return err
 		}
+		defer ffa.Close()
 
 		mr, err := util.NsNewIDAddress(cctx.Uint64("actorid"))
 		if err != nil {

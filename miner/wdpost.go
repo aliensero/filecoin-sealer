@@ -454,30 +454,35 @@ func (m *Miner) winPoStProofsServer(minerID int64, prihex string) {
 	deadInd := int64(-1)
 	for {
 		dinfo, err := m.winPoStProofs(uint64(minerID), prihex, deadInd)
-		if err == nil && int64(dinfo.Index) > deadInd {
+
+		if err != nil {
+			continue
+		}
+
+		if dinfo != nil && int64(dinfo.Index) > deadInd {
 			deadInd = int64(dinfo.Index)
 		}
-		if err == nil && int64(dinfo.Index) == 0 && deadInd == 47 {
+		if dinfo != nil && int64(dinfo.Index) == 0 && deadInd == 47 {
 			deadInd = int64(dinfo.Index)
 		}
 		time.Sleep(30 * time.Second)
 	}
 }
 
-func (m *Miner) WinPoStProofs(minerID int64, prihex string) (util.NsDeadLineInfo, error) {
+func (m *Miner) WinPoStProofs(minerID int64, prihex string) (*util.NsDeadLineInfo, error) {
 	return m.winPoStProofs(uint64(minerID), prihex, -1)
 }
 
-func (m *Miner) winPoStProofs(minerID uint64, prihex string, deadInd int64) (util.NsDeadLineInfo, error) {
+func (m *Miner) winPoStProofs(minerID uint64, prihex string, deadInd int64) (*util.NsDeadLineInfo, error) {
 
 	mpi, err := m.QueryMinerPoStInfo(int64(minerID))
 	if err != nil {
 		log.Errorf("winPoStProofs QueryMinerPoStInfo error %v", err)
-		return util.NsDeadLineInfo{}, err
+		return nil, err
 	}
 	log.Debugf("deadInd(%v) == int64(mpi.Di.Index)(%v) %v len partition %v", deadInd, int64(mpi.Di.Index), deadInd == int64(mpi.Di.Index), len(mpi.Partitions))
 	if deadInd == int64(mpi.Di.Index) {
-		return util.NsDeadLineInfo{}, nil
+		return nil, nil
 	}
 	for ii, pp := range mpi.Partitions {
 		i := ii
@@ -501,7 +506,7 @@ func (m *Miner) winPoStProofs(minerID uint64, prihex string, deadInd int64) (uti
 			log.Infof("WinPoStProofsServer submit post message minerId %v deadline %v partition %v cid %v", minerID, mpi.Di.Index, i, cid)
 		}()
 	}
-	return mpi.Di, nil
+	return &mpi.Di, nil
 }
 
 func (m *Miner) partitionWinPoStProof(p util.NsPartition, minerID uint64, randomness util.NsPoStRandomness) ([]util.NsPoStProof, error) {

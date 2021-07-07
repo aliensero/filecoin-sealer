@@ -7,6 +7,7 @@ import (
 	"os"
 	"time"
 
+	"gitlab.ns/lotus-worker/chain"
 	"gitlab.ns/lotus-worker/util"
 
 	"github.com/filecoin-project/lotus/build"
@@ -20,27 +21,29 @@ type MiningResult struct {
 	ParentMsg   []*util.NsMessage
 }
 
-func MinerMining(ctx context.Context, blkh *util.NsBlockHeader, fa util.LotusAPI, mr util.NsAddress, ki *util.Key, sealedPaths []string) (*MiningResult, error) {
-	curTipset, err := fa.ChainHead(ctx)
-	bheight := blkh.Height
-	for {
-		if err != nil {
-			return nil, xerrors.Errorf("MinerMining ChainHead error %v", err)
-		}
-		if curTipset.Height() == bheight {
-			break
-		}
-		if curTipset.Height() > bheight {
-			return nil, xerrors.Errorf("MinerMining ChainHead curTipset.Height(%v) > blkh.Height(%v)", curTipset.Height(), bheight)
-		}
-		curTipset, err = fa.ChainHead(ctx)
-	}
+func MinerMining(ctx context.Context, hi chain.HeadInfo, fa util.LotusAPI, mr util.NsAddress, ki *util.Key, sealedPaths []string) (*MiningResult, error) {
 
+	curTipset := hi.CurTipSet
 	var parentMsg []*util.NsMessage
+	// for _, h := range curTipset.Blocks() {
+	// 	if cidS, ok := mapHead[h.Cid()]; ok {
+	// 		tmapmsg := make(map[util.NsCid]*util.NsMessage)
+	// 		for _, c := range cidS {
+	// 			if m, ok := mapMsg[c]; !ok {
+	// 				return nil, xerrors.Errorf("mapMsg not containt message %v", c)
+	// 			} else {
+	// 				if _, ok := tmapmsg[c]; !ok {
+	// 					parentMsg = append(parentMsg, m)
+	// 					tmapmsg[c] = m
+	// 				}
+	// 			}
+	// 		}
+	// 	}
+	// }
 
-	mbi, round, err := getBaseInfo(ctx, blkh, fa, mr, curTipset)
+	mbi, round, err := getBaseInfo(ctx, fa, mr, curTipset)
 	if err != nil || mbi == nil {
-		return nil, xerrors.Errorf("MinerMining get miner %v info mbi == nil %v error %v", mr, mbi == nil, err)
+		return nil, xerrors.Errorf("MinerMining get miner %v info mbi == nil %v header %d len %d error %v", mr, mbi == nil, hi.Height, len(hi.CurTipSet.Cids()), err)
 	}
 
 	log.Infof("Time delta between now and our mining base: %ds", uint64(build.Clock.Now().Unix())-curTipset.MinTimestamp())
@@ -163,23 +166,19 @@ loop:
 		ParentMessageReceipts: rectroot,
 	}
 
-	ret := &MiningResult{blkHead, curTipset, ticket, parentMsg}
+	ret := &MiningResult{blkHead, &curTipset, ticket, parentMsg}
 
 	return ret, nil
 
 }
 
-func getBaseInfo(ctx context.Context, blkh *util.NsBlockHeader, fa util.LotusAPI, mr util.NsAddress, curTipset *util.NsTipSet) (*util.NsMiningBaseInfo, util.NsChainEpoch, error) {
-	tps, err := util.NsNewTipSet([]*util.NsBlockHeader{blkh})
-	if err != nil {
-		return nil, 0, err
-	}
-	round := tps.Height() + util.NsChainEpoch(1)
+func getBaseInfo(ctx context.Context, fa util.LotusAPI, mr util.NsAddress, curTipset util.NsTipSet) (*util.NsMiningBaseInfo, util.NsChainEpoch, error) {
+	round := curTipset.Height() + util.NsChainEpoch(1)
 	mbi, err := fa.MinerGetBaseInfo(ctx, mr, round, curTipset.Key())
 	return mbi, round, err
 }
 
-func getTicketProof(ctx context.Context, rebaseData []byte, round util.NsChainEpoch, mr util.NsAddress, ki *util.Key, pts *util.NsTipSet) (*util.NsTicket, error) {
+func getTicketProof(ctx context.Context, rebaseData []byte, round util.NsChainEpoch, mr util.NsAddress, ki *util.Key, pts util.NsTipSet) (*util.NsTicket, error) {
 	buf := new(bytes.Buffer)
 	if err := mr.MarshalCBOR(buf); err != nil {
 		return nil, err
@@ -242,7 +241,7 @@ func getElectionProof(ctx context.Context, mbi *util.NsMiningBaseInfo, rebaseDat
 	return ep, nil
 }
 
-func publishBlockMsg(ctx context.Context, fa *util.P2pLotusAPI, miningRet *MiningResult, ki *util.Key) error {
+func publishBlockMsg(ctx context.Context, fa *chain.P2pLotusAPI, miningRet *MiningResult, ki *util.Key) error {
 
 	blkHead := miningRet.BlockHeader
 	curts := miningRet.BaseTipSet
@@ -319,30 +318,30 @@ func publishBlockMsg(ctx context.Context, fa *util.P2pLotusAPI, miningRet *Minin
 		return err
 	}
 
-	bmsgs := make([]*util.NsMessage, 0)
-	smsgs := make([]*util.NsSignedMessage, 0)
-	for _, msg := range msgs {
-		cm := *msg
-		if msg.Signature.Type == util.NsSigTypeBLS {
-			bmsgs = append(bmsgs, &cm.Message)
-		} else {
-			smsgs = append(smsgs, &cm)
-		}
-	}
+	// bmsgs := make([]*util.NsMessage, 0)
+	// smsgs := make([]*util.NsSignedMessage, 0)
+	// for _, msg := range msgs {
+	// 	cm := *msg
+	// 	if msg.Signature.Type == util.NsSigTypeBLS {
+	// 		bmsgs = append(bmsgs, &cm.Message)
+	// 	} else {
+	// 		smsgs = append(smsgs, &cm)
+	// 	}
+	// }
 
 	deadline := blk.Header.Timestamp + 1
 	baseT := time.Unix(int64(deadline), 0)
 	build.Clock.Sleep(build.Clock.Until(baseT))
 
-	err = fa.PublishBlockMsg(ctx, b)
+	err = fa.Publish(ctx, b)
 	if err != nil {
 		return err
 	}
 
 	log.Infof("publishBlockMsg cid %v ParentStateRoot %v ParentMessageReceipts %v ParentBaseFee %v len(msgs) %v waitPublish %v", blk.Cid(), blkHead.ParentStateRoot, blkHead.ParentMessageReceipts, blkHead.ParentBaseFee, len(msgs), baseT)
-	for _, msg := range msgs {
-		log.Infof("msg cid %v", msg.Cid())
-	}
+	// for _, msg := range msgs {
+	// 	log.Infof("msg cid %v", msg.Cid())
+	// }
 	return nil
 }
 

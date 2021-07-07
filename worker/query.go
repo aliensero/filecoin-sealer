@@ -7,10 +7,12 @@ import (
 
 func (w *Worker) queryTask(reqInfo util.RequestInfo) (util.DbTaskInfo, error) {
 	if w.MinerApi == nil {
+		w.ConnMiner()
 		return util.DbTaskInfo{}, xerrors.Errorf("w.MinerApi is nil")
 	}
 	qr, err := w.MinerApi.QueryTask(reqInfo)
 	if err != nil {
+		w.ConnMiner()
 		return util.DbTaskInfo{}, err
 	}
 
@@ -20,37 +22,37 @@ func (w *Worker) queryTask(reqInfo util.RequestInfo) (util.DbTaskInfo, error) {
 	return qr.Results[0], nil
 }
 
-func (w *Worker) queryRetry(reqInfo util.RequestInfo) (util.DbTaskInfo, error) {
-	if w.MinerApi == nil {
-		return util.DbTaskInfo{}, xerrors.Errorf("w.MinerApi is nil")
-	}
-	qr, err := w.MinerApi.QueryTask(reqInfo)
-	if err != nil {
-		return util.DbTaskInfo{}, err
-	}
+// func (w *Worker) queryRetry(reqInfo util.RequestInfo) (util.DbTaskInfo, error) {
+// 	if w.MinerApi == nil {
+// 		return util.DbTaskInfo{}, xerrors.Errorf("w.MinerApi is nil")
+// 	}
+// 	qr, err := w.MinerApi.QueryTask(reqInfo)
+// 	if err != nil {
+// 		return util.DbTaskInfo{}, err
+// 	}
 
-	if qr.ResultCode == util.Err {
-		return util.DbTaskInfo{}, xerrors.Errorf(qr.Err)
-	}
+// 	if qr.ResultCode == util.Err {
+// 		return util.DbTaskInfo{}, xerrors.Errorf(qr.Err)
+// 	}
 
-	return qr.Results[0], nil
-}
+// 	return qr.Results[0], nil
+// }
 
-func (w *Worker) queryRetryByState(reqInfo util.RequestInfo) (util.DbTaskInfo, error) {
-	if w.MinerApi == nil {
-		return util.DbTaskInfo{}, xerrors.Errorf("w.MinerApi is nil")
-	}
-	qr, err := w.MinerApi.QueryTask(reqInfo)
-	if err != nil {
-		return util.DbTaskInfo{}, err
-	}
+// func (w *Worker) queryRetryByState(reqInfo util.RequestInfo) (util.DbTaskInfo, error) {
+// 	if w.MinerApi == nil {
+// 		return util.DbTaskInfo{}, xerrors.Errorf("w.MinerApi is nil")
+// 	}
+// 	qr, err := w.MinerApi.QueryTask(reqInfo)
+// 	if err != nil {
+// 		return util.DbTaskInfo{}, err
+// 	}
 
-	if qr.ResultCode == util.Err {
-		return util.DbTaskInfo{}, xerrors.Errorf(qr.Err)
-	}
+// 	if qr.ResultCode == util.Err {
+// 		return util.DbTaskInfo{}, xerrors.Errorf(qr.Err)
+// 	}
 
-	return qr.Results[0], nil
-}
+// 	return qr.Results[0], nil
+// }
 
 func (w *Worker) queryOnly(taskInfo util.DbTaskInfo) ([]util.DbTaskInfo, error) {
 	if w.MinerApi == nil {

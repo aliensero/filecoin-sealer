@@ -13,6 +13,7 @@ import (
 	"github.com/urfave/cli/v2"
 	"gitlab.ns/lotus-worker/util"
 	"golang.org/x/crypto/blake2b"
+	"golang.org/x/term"
 	"golang.org/x/xerrors"
 )
 
@@ -78,29 +79,52 @@ var runCmd = &cli.Command{
 
 var testCmd = &cli.Command{
 	Name:  "test",
-	Usage: "<height> <miner>",
+	Usage: "<begin epoch> <end epoch> <miner>",
 	Flags: []cli.Flag{
 		&cli.StringFlag{
 			Name: "prihex",
 		},
 	},
 	Action: func(cctx *cli.Context) error {
-		api, closer, err := util.NsGetFullNodeAPI(cctx)
+		api, closer, err := util.NewPubLotusApi(os.Getenv("FULLNODE_API_INFO"))
 		if err != nil {
 			return err
 		}
 		defer closer()
 		ctx := cctx.Context
 		hs := cctx.Args().First()
-		hi, err := strconv.ParseInt(hs, 10, 64)
+		hs1 := cctx.Args().Get(1)
+		bhi, err := strconv.ParseInt(hs, 10, 64)
 		if err != nil {
 			return err
 		}
-		curTipset, err := api.ChainGetTipSetByHeight(ctx, util.NsChainEpoch(hi), util.NsTipSetKey{})
+		ehi, err := strconv.ParseInt(hs1, 10, 64)
 		if err != nil {
 			return err
 		}
-		return trialWinning(ctx, cctx.Args().Get(1), curTipset.Height(), api, cctx.String("prihex"))
+		pk := cctx.String("prihex")
+
+		if pk == "" {
+			fmt.Print("enter private key:")
+			buf, err := term.ReadPassword(int(os.Stdin.Fd()))
+			if err != nil {
+				return err
+			}
+			fmt.Println()
+			pk = string(buf)
+		}
+		for i := bhi; i <= ehi; i++ {
+			curTipset, err := api.ChainGetTipSetByHeight(ctx, util.NsChainEpoch(i), util.NsTipSetKey{})
+			if err != nil {
+				log.Error(err)
+				continue
+			}
+			err = trialWinning(ctx, cctx.Args().Get(2), curTipset.Height(), api, pk)
+			if err != nil {
+				log.Error(err)
+			}
+		}
+		return nil
 	},
 }
 

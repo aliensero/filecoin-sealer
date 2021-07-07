@@ -9,7 +9,6 @@ import (
 	"os"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/filecoin-project/go-jsonrpc"
 	"github.com/filecoin-project/go-jsonrpc/auth"
@@ -23,11 +22,15 @@ import (
 	"gitlab.ns/lotus-worker/worker"
 )
 
-func init() {
-	_ = logging.SetLogLevel("main", "DEBUG")
-}
+var log = logging.Logger("worker")
 
-var log = logging.Logger("main")
+func init() {
+	if level, ok := os.LookupEnv("LEVEL_LOG"); !ok {
+		logging.SetLogLevel("worker", "INFO")
+	} else {
+		logging.SetLogLevel("worker", level)
+	}
+}
 
 func main() {
 
@@ -36,8 +39,8 @@ func main() {
 		unSealedFileCmd,
 		taskRunCmd,
 		recoveryCmd,
-		taskAutoCmd,
 		taskTriggerCmd,
+		taskAutoCmd,
 		addPostCmd,
 	}
 
@@ -71,11 +74,6 @@ var runCmd = &cli.Command{
 			Name:  "extrlisten",
 			Usage: "extract host address and port the worker api will listen on",
 			Value: "127.0.0.1:3456",
-		},
-		&cli.StringFlag{
-			Name:  "timeout",
-			Usage: "used when 'listen' is unspecified. must be a valid duration recognized by golang's time.ParseDuration function",
-			Value: "30m",
 		},
 		&cli.StringFlag{
 			Name:  "taskType",
@@ -248,6 +246,7 @@ var runCmd = &cli.Command{
 			go workerInstan.ResetAbortedSession()
 		}
 		go workerInstan.WinPoStServer()
+		go workerInstan.Server()
 		return srv.Serve(nl)
 	},
 }
@@ -364,32 +363,9 @@ var recoveryCmd = &cli.Command{
 	},
 }
 
-func extractRoutableIP(timeout time.Duration) (string, error) {
-	minerMultiAddrKey := "MINER_API_INFO"
-	deprecatedMinerMultiAddrKey := "STORAGE_API_INFO"
-	env, ok := os.LookupEnv(minerMultiAddrKey)
-	if !ok {
-		// TODO remove after deprecation period
-		_, ok = os.LookupEnv(deprecatedMinerMultiAddrKey)
-		if ok {
-			log.Warnf("Using a deprecated env(%s) value, please use env(%s) instead.", deprecatedMinerMultiAddrKey, minerMultiAddrKey)
-		}
-		return "", xerrors.New("MINER_API_INFO environment variable required to extract IP")
-	}
-	minerAddr := strings.Split(env, "/")
-	conn, err := net.DialTimeout("tcp", minerAddr[2]+":"+minerAddr[4], timeout)
-	if err != nil {
-		return "", err
-	}
-	defer conn.Close() //nolint:errcheck
-
-	localAddr := conn.LocalAddr().(*net.TCPAddr)
-
-	return strings.Split(localAddr.IP.String(), ":")[0], nil
-}
-
 var taskTriggerCmd = &cli.Command{
-	Name: "tasktrig",
+	Name:  "tasktrig",
+	Usage: "[actorid] [sectornum] [tasktype]",
 	Flags: []cli.Flag{
 		&cli.StringFlag{
 			Name:    "bin",

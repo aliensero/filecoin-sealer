@@ -1,1 +1,8 @@
 .vscode
+filecoin-install
+go.mod
+go.sum
+ns-worker
+ns-miner
+server
+.update-module

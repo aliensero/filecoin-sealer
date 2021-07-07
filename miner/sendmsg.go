@@ -3,7 +3,6 @@ package miner
 import (
 	"bytes"
 	"context"
-	"strings"
 
 	"github.com/google/uuid"
 	"gitlab.ns/lotus-worker/util"
@@ -29,13 +28,12 @@ func (m *Miner) SendPreCommit(actorID int64, sectorNum int64, deposit string, fe
 		return qr.ToString(), nil
 	}
 	taskInfo := qr.Results[0]
-
-	if err != nil && !strings.Contains(err.Error(), "record not found") {
-		return session, err
-	}
-	if err != nil && strings.Contains(err.Error(), "record not found") {
-		log.Debugf("miner SendPreCommit record not found")
+	if err != nil {
 		return "", xerrors.Errorf("miner SendPreCommit %v", err)
+	}
+
+	if qr.ResultCode == util.Err {
+		return qr.ToString(), nil
 	}
 
 	m.ReqSession.Store(session, nil)

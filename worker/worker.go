@@ -6,7 +6,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strings"
 	"sync"
 	"time"
 
@@ -330,7 +329,7 @@ func (w *Worker) RetryTask(actorID int64, sectorNum int64, taskType string) (str
 		Session:      session,
 	}
 
-	taskInfo, err := w.queryRetry(reqInfo)
+	taskInfo, err := w.queryTask(reqInfo)
 
 	if err != nil {
 		return "", err
@@ -374,15 +373,9 @@ func (w *Worker) RetryTaskPID(actorID int64, sectorNum int64, taskType string, b
 		Session:      session,
 	}
 
-	taskInfo, err := w.queryRetry(reqInfo)
+	taskInfo, err := w.queryTask(reqInfo)
 
-	if err != nil && !strings.Contains(err.Error(), "record not found") {
-		log.Errorf("worker SealPreCommitPhase2 error %v", err)
-		err2 := w.ConnMiner()
-		if err2 != nil {
-			return "MinerApi reconnect please retry", err2
-		}
-		log.Info("MinerApi reconnect please retry")
+	if err != nil {
 		return session, err
 	}
 
@@ -439,18 +432,8 @@ func (w *Worker) RetryTaskPIDByState(actorID int64, taskType string, binPath str
 		WorkerID: w.WorkerID,
 	}
 
-	taskInfo, err := w.queryRetryByState(reqInfo)
-	if err != nil && !strings.Contains(err.Error(), "record not found") {
-		log.Errorf("worker %s error %v", taskType, err)
-		err2 := w.ConnMiner()
-		if err2 != nil {
-			return "", err2
-		}
-		log.Info("MinerApi reconnect please retry")
-		return "", err
-	}
-
-	if err != nil && strings.Contains(err.Error(), "record not found") {
+	taskInfo, err := w.queryTask(reqInfo)
+	if err != nil {
 		return "", err
 	}
 	ret, err := w.RetryTaskPID(actorID, *taskInfo.SectorNum, taskType, binPath)

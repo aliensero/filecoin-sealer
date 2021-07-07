@@ -4,7 +4,6 @@ import (
 	"encoding/hex"
 	"os"
 	"path/filepath"
-	"strings"
 	"time"
 
 	"github.com/docker/go-units"
@@ -44,19 +43,7 @@ func (w *Worker) SealPreCommitPhase1(actorID int64, sectorNum int64) (string, er
 	}
 
 	taskInfo, err := w.queryTask(reqInfo)
-
-	if err != nil && !strings.Contains(err.Error(), "record not found") {
-		log.Errorf("worker SealPreCommitPhase1 error %v", err)
-		err2 := w.ConnMiner()
-		if err2 != nil {
-			return "", err2
-		}
-		log.Info("MinerApi reconnect please retry")
-		return session, err
-	}
-
-	if err != nil && strings.Contains(err.Error(), "record not found") {
-		log.Warnf("worker SealPreCommitPhase1 record not found")
+	if err != nil {
 		return "", err
 	}
 
@@ -204,17 +191,7 @@ func (w *Worker) ProcessPrePhase1(actorID int64, sectorNum int, binPath string) 
 	}
 
 	taskInfo, err = w.queryTask(reqInfo)
-	if err != nil && !strings.Contains(err.Error(), "record not found") {
-		log.Errorf("worker %s error %v", taskType, err)
-		err2 := w.ConnMiner()
-		if err2 != nil {
-			return util.ChildProcessInfo{}, err2
-		}
-		log.Info("MinerApi reconnect please retry")
-		return util.ChildProcessInfo{}, err
-	}
-
-	if err != nil && strings.Contains(err.Error(), "record not found") {
+	if err != nil {
 		return util.ChildProcessInfo{}, err
 	}
 

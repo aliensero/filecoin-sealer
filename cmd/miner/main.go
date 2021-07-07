@@ -14,23 +14,27 @@ import (
 
 	logging "github.com/ipfs/go-log/v2"
 	"github.com/urfave/cli/v2"
+	"gitlab.ns/lotus-worker/chain"
 	"gitlab.ns/lotus-worker/miner"
 	"gitlab.ns/lotus-worker/mining"
-	"gitlab.ns/lotus-worker/p2p"
 	"gitlab.ns/lotus-worker/util"
-	up2p "gitlab.ns/lotus-worker/util/p2p"
 	"gitlab.ns/lotus-worker/worker"
 )
 
 var log = logging.Logger("miner")
 
+func init() {
+	if level, ok := os.LookupEnv("LEVEL_LOG"); !ok {
+		logging.SetLogLevel("miner", "INFO")
+	} else {
+		logging.SetLogLevel("miner", level)
+	}
+}
+
 func main() {
 
 	localCmds := []*cli.Command{
 		daemonCmd,
-		p2p.SubCmd,
-		p2p.TranCmd,
-		p2p.ComputeReceis,
 		taskAutoCmd,
 		taskTriggerCmd,
 		addTaskCmd,
@@ -104,7 +108,7 @@ var daemonCmd = &cli.Command{
 		&cli.Int64Flag{
 			Name:  "waitseedepoch",
 			Usage: "wait seed epoch",
-			Value: 3,
+			Value: 150,
 		},
 		&cli.Int64Flag{
 			Name:  "expiration",
@@ -113,10 +117,6 @@ var daemonCmd = &cli.Command{
 		},
 	},
 	Action: func(cctx *cli.Context) error {
-
-		if v, ok := os.LookupEnv("LOG_LEVEL"); ok {
-			logging.SetLogLevel("miner-struct", v)
-		}
 
 		db, err := util.InitMysql(cctx.String("user"), cctx.String("passwd"), cctx.String("ip"), cctx.String("port"), cctx.String("name"))
 		if err != nil {
@@ -144,10 +144,12 @@ var daemonCmd = &cli.Command{
 			lotusApi = lotusApi1
 		}
 		defer close()
-		p2papi, err := util.NewP2pLotusAPI(lotusApi, up2p.NATNAME)
+		p2papi, err := chain.NewP2pLotusAPI(lotusApi)
 		if err != nil {
 			return err
 		}
+		defer p2papi.Close()
+
 		miner := miner.Miner{
 			Db:               db,
 			LotusApi:         p2papi,
@@ -178,6 +180,7 @@ var daemonCmd = &cli.Command{
 		}
 
 		go miner.WinPoStProofsServer()
+		go miner.Server()
 
 		return srv.Serve(nl)
 	},
@@ -189,89 +192,9 @@ const (
 	COMMIT    = "COMMIT"
 )
 
-var taskTriggerCmd = &cli.Command{
-	Name: "tasktrig",
-	Flags: []cli.Flag{
-		&cli.StringFlag{
-			Name:  "prikey",
-			Usage: "private key",
-		},
-		&cli.StringFlag{
-			Name:  "deposit",
-			Usage: "take FIL",
-			Value: "0",
-		},
-		&cli.StringFlag{
-			Name:    "minerapi",
-			Usage:   "miner api",
-			EnvVars: []string{"MINER_API"},
-			Value:   "ws://127.0.0.1:1234/rpc/v0",
-		},
-	},
-	Action: func(cctx *cli.Context) error {
-
-		if cctx.Args().Len() < 3 {
-			return fmt.Errorf("[actorid] [sectornum] [tasktype]")
-		}
-
-		close, minerApi, err := util.ConnMiner(cctx.String("minerapi"))
-		if err != nil {
-			return err
-		}
-		defer close()
-
-		ai, err := strconv.ParseInt(cctx.Args().Get(0), 10, 64)
-		if err != nil {
-			return err
-		}
-		var actorID int64 = ai
-		si, err := strconv.ParseInt(cctx.Args().Get(1), 10, 64)
-		if err != nil {
-			return err
-		}
-		var sectorNum int64 = si
-
-		taskType := cctx.Args().Get(2)
-
-		pk := cctx.String("prikey")
-		var readPrivateKey = func() error {
-			if pk == "" {
-				fmt.Print("enter private key:")
-				buf, err := term.ReadPassword(int(os.Stdin.Fd()))
-				if err != nil {
-					return err
-				}
-				pk = string(buf)
-			}
-			return nil
-		}
-
-		var result interface{}
-		switch taskType {
-		case SEED:
-			result, err = minerApi.GetSeedRand(actorID, sectorNum)
-		case PRECOMMIT:
-			err := readPrivateKey()
-			if err != nil {
-				return err
-			}
-			result, err = minerApi.SendPreCommitByPrivatKey(pk, actorID, sectorNum, cctx.String("deposit"))
-		case COMMIT:
-			err := readPrivateKey()
-			if err != nil {
-				return err
-			}
-			result, err = minerApi.SendCommitByPrivatKey(pk, actorID, sectorNum, cctx.String("deposit"))
-		}
-		if err == nil {
-			log.Info(result)
-		}
-		return err
-	},
-}
-
 var taskAutoCmd = &cli.Command{
-	Name: "taskauto",
+	Name:  "taskauto",
+	Usage: "[actorid] [privatkey]",
 	Flags: []cli.Flag{
 		&cli.BoolFlag{
 			Name:  "add",
@@ -337,8 +260,91 @@ var taskAutoCmd = &cli.Command{
 	},
 }
 
+var taskTriggerCmd = &cli.Command{
+	Name:  "tasktrig",
+	Usage: "[actorid] [sectornum] [tasktype]",
+	Flags: []cli.Flag{
+		&cli.StringFlag{
+			Name:  "prikey",
+			Usage: "private key",
+		},
+		&cli.StringFlag{
+			Name:  "deposit",
+			Usage: "take FIL",
+			Value: "0",
+		},
+		&cli.StringFlag{
+			Name:    "minerapi",
+			Usage:   "miner api",
+			EnvVars: []string{"MINER_API"},
+			Value:   "ws://127.0.0.1:1234/rpc/v0",
+		},
+	},
+	Action: func(cctx *cli.Context) error {
+
+		if cctx.Args().Len() < 3 {
+			return fmt.Errorf("[actorid] [sectornum] [tasktype]")
+		}
+
+		close, minerApi, err := util.ConnMiner(cctx.String("minerapi"))
+		if err != nil {
+			return err
+		}
+		defer close()
+
+		ai, err := strconv.ParseInt(cctx.Args().Get(0), 10, 64)
+		if err != nil {
+			return err
+		}
+		var actorID int64 = ai
+		si, err := strconv.ParseInt(cctx.Args().Get(1), 10, 64)
+		if err != nil {
+			return err
+		}
+		var sectorNum int64 = si
+
+		taskType := cctx.Args().Get(2)
+
+		pk := cctx.String("prikey")
+		var readPrivateKey = func() error {
+			if pk == "" {
+				fmt.Print("enter private key:")
+				buf, err := term.ReadPassword(int(os.Stdin.Fd()))
+				if err != nil {
+					return err
+				}
+				pk = string(buf)
+			}
+			return nil
+		}
+
+		var result interface{}
+		switch taskType {
+		case SEED:
+			result, err = minerApi.GetSeedRand(actorID, sectorNum)
+		case PRECOMMIT:
+			err = readPrivateKey()
+			if err != nil {
+				return err
+			}
+			result, err = minerApi.SendPreCommitByPrivatKey(pk, actorID, sectorNum, cctx.String("deposit"))
+		case COMMIT:
+			err = readPrivateKey()
+			if err != nil {
+				return err
+			}
+			result, err = minerApi.SendCommitByPrivatKey(pk, actorID, sectorNum, cctx.String("deposit"))
+		}
+		if err == nil {
+			log.Info(result)
+		}
+		return err
+	},
+}
+
 var addTaskCmd = &cli.Command{
-	Name: "addtask",
+	Name:  "addtask",
+	Usage: "[actorid] [sectornum]",
 	Flags: []cli.Flag{
 		&cli.StringFlag{
 			Name:    "storagePath",
@@ -920,7 +926,7 @@ var manualPostCmd = &cli.Command{
 			Value: 0,
 		},
 		&cli.IntFlag{
-			Name:  "pinde",
+			Name:  "pindex",
 			Usage: "partition index",
 			Value: 0,
 		},

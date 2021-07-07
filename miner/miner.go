@@ -256,7 +256,7 @@ func (m *Miner) GetSeedRand(actorID int64, sectorNum int64) (string, error) {
 		m.ReqSession.Store(session, nil)
 		for randHeight > tipset.Height() {
 			log.Debugf("actorID %v sectorNum %d randHeight %d grantThan current tipset height %d", minerAddr, *taskInfo.SectorNum, randHeight, tipset.Height())
-			time.Sleep(30 * time.Second)
+			time.Sleep(6 * 30 * time.Second)
 			tipset, err = m.LotusApi.ChainHead(context.TODO())
 			if err != nil {
 				return
@@ -301,7 +301,7 @@ func (m *Miner) RecieveTaskResult(actorID int64, sectorNum int64, taskType strin
 	if isErr {
 		state = util.ERROR
 	}
-	log.Infof("ActorID %d sectorNum %d taskType %s reqID %s isErr %v recieveTaskResult %v", actorID, sectorNum, taskType, reqID, isErr, result)
+	log.Infof("ActorID %d sectorNum %d taskType %s reqID %s isErr %v recieveTaskResult %v", actorID, sectorNum, taskType, reqID, isErr, result.CommString)
 	taskLogWhr := util.DbTaskLog{
 		ActorID:   actorID,
 		SectorNum: sectorNum,
@@ -392,6 +392,9 @@ func (m *Miner) RecieveTaskResult(actorID int64, sectorNum int64, taskType strin
 	}
 	if err := tx.Commit().Error; err != nil {
 		return err
+	}
+	if isErr {
+		go m.TaskFailedHandle(actorID, sectorNum, taskType, result.Marshal())
 	}
 	if taskType == util.COMMIT {
 		go m.UpdatePoStInfo(actorID, sectorNum)

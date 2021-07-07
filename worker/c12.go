@@ -2,7 +2,6 @@ package worker
 
 import (
 	"encoding/hex"
-	"strings"
 	"time"
 
 	"github.com/docker/go-units"
@@ -41,19 +40,7 @@ func (w *Worker) SealCommitPhase1(actorID int64, sectorNum int64) (string, error
 	}
 
 	taskInfo, err := w.queryTask(reqInfo)
-
-	if err != nil && !strings.Contains(err.Error(), "record not found") {
-		log.Errorf("worker SealCommitPhase1 error %v", err)
-		err2 := w.ConnMiner()
-		if err2 != nil {
-			return "MinerApi reconnect please retry", err2
-		}
-		log.Info("MinerApi reconnect please retry")
-		return session, err
-	}
-
-	if err != nil && strings.Contains(err.Error(), "record not found") {
-		log.Warnf("worker SealCommitPhase1 record not found")
+	if err != nil {
 		return "", err
 	}
 
@@ -177,17 +164,7 @@ func (w *Worker) ProcessCommitPhase1(actorID int64, sectorNum int, binPath strin
 	}
 
 	taskInfo, err = w.queryTask(reqInfo)
-	if err != nil && !strings.Contains(err.Error(), "record not found") {
-		log.Errorf("worker %s error %v", taskType, err)
-		err2 := w.ConnMiner()
-		if err2 != nil {
-			return util.ChildProcessInfo{}, err2
-		}
-		log.Info("MinerApi reconnect please retry")
-		return util.ChildProcessInfo{}, err
-	}
-
-	if err != nil && strings.Contains(err.Error(), "record not found") {
+	if err != nil {
 		return util.ChildProcessInfo{}, err
 	}
 
@@ -237,19 +214,7 @@ func (w *Worker) SealCommitPhase2(actorID int64, sectorNum int64) (string, error
 	}
 
 	taskInfo, err := w.queryTask(reqInfo)
-
-	if err != nil && !strings.Contains(err.Error(), "record not found") {
-		log.Errorf("worker SealCommitPhase2 error %v", err)
-		err2 := w.ConnMiner()
-		if err2 != nil {
-			return "MinerApi reconnect please retry", err2
-		}
-		log.Info("MinerApi reconnect please retry")
-		return session, err
-	}
-
-	if err != nil && strings.Contains(err.Error(), "record not found") {
-		log.Warnf("worker SealCommitPhase2 record not found")
+	if err != nil {
 		return "", err
 	}
 
@@ -337,17 +302,7 @@ func (w *Worker) ProcessCommitPhase2(actorID int64, sectorNum int, binPath strin
 	}
 
 	taskInfo, err = w.queryTask(reqInfo)
-	if err != nil && !strings.Contains(err.Error(), "record not found") {
-		log.Errorf("worker %s error %v", taskType, err)
-		err2 := w.ConnMiner()
-		if err2 != nil {
-			return util.ChildProcessInfo{}, err2
-		}
-		log.Info("MinerApi reconnect please retry")
-		return util.ChildProcessInfo{}, err
-	}
-
-	if err != nil && strings.Contains(err.Error(), "record not found") {
+	if err != nil {
 		return util.ChildProcessInfo{}, err
 	}
 

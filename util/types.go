@@ -8,7 +8,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"path/filepath"
-	"time"
 
 	commcid "github.com/filecoin-project/go-fil-commcid"
 	"github.com/filecoin-project/go-jsonrpc"
@@ -21,11 +20,8 @@ import (
 	"github.com/filecoin-project/go-state-types/dline"
 	"github.com/filecoin-project/go-state-types/exitcode"
 
-	"github.com/libp2p/go-libp2p"
 	p2pcrypt "github.com/libp2p/go-libp2p-core/crypto"
-	"github.com/libp2p/go-libp2p-core/host"
 	"github.com/libp2p/go-libp2p-core/peer"
-	pubsub "github.com/libp2p/go-libp2p-pubsub"
 
 	ffi "github.com/filecoin-project/filecoin-ffi"
 	"github.com/filecoin-project/filecoin-ffi/generated"
@@ -129,10 +125,8 @@ var NsNewTipSetKey = types.NewTipSetKey
 
 type NsNetworkName = dtypes.NetworkName
 
-type NsSectorPreCommitInfo = miner2.SectorPreCommitInfo
 type NsProveCommitSectorParams = miner2.ProveCommitSectorParams
 type NsMinerInfo = miner2.MinerInfo
-type NsSubmitWindowedPoStParams = miner2.SubmitWindowedPoStParams
 type NsPoStPartition = miner2.PoStPartition
 type NsDeclareFaultsRecoveredParams = miner2.DeclareFaultsRecoveredParams
 type NsRecoveryDeclaration = miner2.RecoveryDeclaration
@@ -192,9 +186,12 @@ type NsSectorPreCommitOnChainInfo = miner.SectorPreCommitOnChainInfo
 type NsSectorLocation = miner.SectorLocation
 type NsDeadline = miner.Deadline
 type NsMinerPartition = miner.Partition
+type NsSectorPreCommitInfo = miner.SectorPreCommitInfo
+type NsSubmitWindowedPoStParams = miner.SubmitWindowedPoStParams
 
 var NsWithdrawBalance = miner.Methods.WithdrawBalance
 var NsMinerLoad = miner.Load
+
 var NsWinningPoStProofTypeFromWindowPoStProofType = miner.WinningPoStProofTypeFromWindowPoStProofType
 
 type NsMiningBase = lminer.MiningBase
@@ -287,117 +284,6 @@ type TaskResult struct {
 
 func (tr *TaskResult) Marshal() string {
 	return fmt.Sprintf("%v", tr)
-}
-
-type P2pLotusAPI struct {
-	api.FullNode
-	host      host.Host
-	sub       *pubsub.PubSub
-	bootPeers []peer.AddrInfo
-	nn        dtypes.NetworkName
-}
-
-func (a *P2pLotusAPI) MpoolPush(ctx context.Context, m *types.SignedMessage) (cid.Cid, error) {
-	b, err := m.Serialize()
-	if err != nil {
-		return cid.Undef, err
-	}
-
-	if a.sub != nil {
-	loop:
-		for {
-			for _, p := range a.bootPeers {
-				if err := a.host.Connect(ctx, p); err == nil {
-					break loop
-				} else {
-					log.Errorf("connect peer %v error %v", p, err)
-				}
-			}
-			time.Sleep(30 * time.Second)
-		}
-
-		err = a.sub.Publish(build.MessagesTopic(a.nn), b)
-		if err != nil {
-			return cid.Undef, err
-		}
-	} else {
-		_, err := a.FullNode.MpoolPush(ctx, m)
-		if err != nil {
-			return cid.Undef, err
-		}
-	}
-	return m.Cid(), nil
-}
-
-func (a *P2pLotusAPI) PublishBlockMsg(ctx context.Context, b []byte) error {
-
-	tf := time.After(3 * time.Second)
-loop:
-	for {
-		select {
-		case <-tf:
-			break loop
-		default:
-			for _, p := range a.bootPeers {
-				if err := a.host.Connect(ctx, p); err == nil {
-					break loop
-				} else {
-					log.Errorf("connect peer %v error %v", p, err)
-				}
-			}
-		}
-	}
-	topic := build.BlocksTopic(a.nn)
-	return a.sub.Publish(topic, b)
-}
-
-func NewP2pLotusAPI(a api.FullNode, nn dtypes.NetworkName) (*P2pLotusAPI, error) {
-	api := &P2pLotusAPI{}
-	h, sub, ps, _ := NewPubSub()
-	// if err != nil {
-	// 	return nil, err
-	// }
-	api.sub = sub
-	api.bootPeers = ps
-	api.nn = nn
-	api.FullNode = a
-	api.host = h
-	return api, nil
-}
-
-func NewPubSub() (host.Host, *pubsub.PubSub, []peer.AddrInfo, error) {
-
-	ctx := context.TODO()
-	host, err := libp2p.New(
-		ctx,
-		libp2p.Defaults,
-	)
-	if err != nil {
-		return nil, nil, nil, err
-	}
-	ps, err := pubsub.NewGossipSub(ctx, host)
-	if err != nil {
-		return nil, nil, nil, err
-	}
-
-	pi, err := build.BuiltinBootstrap()
-	if err != nil {
-		return nil, nil, nil, err
-	}
-	connected := false
-	for _, p := range pi {
-		if err := host.Connect(ctx, p); err == nil {
-			connected = true
-			break
-		} else {
-			log.Errorf("connect peer %v error %v", p, err)
-		}
-	}
-	if !connected {
-		log.Errorf("bootstrap peers %v", pi)
-		return nil, nil, nil, xerrors.Errorf("connect bootstrap peers failed")
-	}
-	return host, ps, pi, nil
 }
 
 var NsComputeNextBaseFee = store.ComputeNextBaseFee

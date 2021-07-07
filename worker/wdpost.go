@@ -200,7 +200,7 @@ func (w *Worker) GeneratePoStProof(di util.NsDeadLineInfo, minerID uint64, parti
 		if fcs == nil {
 			PoStProofType = util.NsRegisteredPoStProof(tMap[sid].ProofType)
 			fcs, err1 = util.NsGeneratePoStFallbackSectorChallenges(
-				util.NsRegisteredPoStProof(PoStProofType),
+				PoStProofType,
 				util.NsActorID(minerID),
 				randomness,
 				sset,

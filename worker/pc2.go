@@ -1,7 +1,6 @@
 package worker
 
 import (
-	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -39,19 +38,7 @@ func (w *Worker) SealPreCommitPhase2(actorID int64, sectorNum int64) (string, er
 	}
 
 	taskInfo, err := w.queryTask(reqInfo)
-
-	if err != nil && !strings.Contains(err.Error(), "record not found") {
-		log.Errorf("worker SealPreCommitPhase2 error %v", err)
-		err2 := w.ConnMiner()
-		if err2 != nil {
-			return "MinerApi reconnect please retry", err2
-		}
-		log.Info("MinerApi reconnect please retry")
-		return session, err
-	}
-
-	if err != nil && strings.Contains(err.Error(), "record not found") {
-		log.Warnf("worker SealPreCommitPhase2 record not found")
+	if err != nil {
 		return "", xerrors.Errorf("%v", err)
 	}
 
@@ -128,7 +115,6 @@ func (w *Worker) ProcessPrePhase2(actorID int64, sectorNum int64, binPath string
 
 	taskInfo, err = w.queryTask(reqInfo)
 	if err != nil {
-		log.Info("MinerApi reconnect please retry")
 		return util.ChildProcessInfo{}, err
 	}
 
